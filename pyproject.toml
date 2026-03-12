@@ -1,0 +1,37 @@
+[project]
+name = "secure-travel-booking-platform"
+version = "0.1.0"
+description = "Security-focused travel booking platform built with FastAPI"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "sqlalchemy",
+  "alembic",
+  "psycopg2-binary",
+  "python-jose",
+  "passlib[bcrypt]",
+  "pydantic-settings",
+  "email-validator",
+  "python-multipart",
+  "httpx",
+  "pytest",
+  "reportlab",
+  "redis",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+  "postgres: tests that require a real PostgreSQL database"
+]
+

@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from app.core.security import (
+    create_access_token,
+    create_refresh_token_value,
+    get_refresh_token_expiry,
+    hash_refresh_token,
+)
+from app.models.user import RefreshToken
+from app.repositories.user_repository import UserRepository
+
+
+class AuthTokenService:
+    def __init__(self, user_repo: UserRepository) -> None:
+        self.user_repo = user_repo
+
+    def create_and_store_refresh_token(self, *, user_id: str) -> str:
+        refresh_token_value = create_refresh_token_value()
+        refresh_token_hash = hash_refresh_token(refresh_token_value)
+        refresh_token_expires_at = get_refresh_token_expiry()
+
+        refresh_token = RefreshToken(
+            user_id=user_id,
+            token_hash=refresh_token_hash,
+            expires_at=refresh_token_expires_at,
+            revoked_at=None,
+        )
+        self.user_repo.add_refresh_token(refresh_token)
+        return refresh_token_value
+
+    def issue_session_tokens(self, *, user_id: str) -> tuple[str, str]:
+        access_token = create_access_token(user_id)
+        refresh_token = self.create_and_store_refresh_token(user_id=user_id)
+        return access_token, refresh_token
+
+    def validate_refresh_token(self, *, refresh_token: str):
+        token_hash = hash_refresh_token(refresh_token)
+        stored = self.user_repo.get_refresh_token_by_hash(token_hash)
+
+        if not stored:
+            raise ValueError("Invalid refresh token")
+
+        now = datetime.now(timezone.utc)
+        if stored.revoked_at is not None:
+            raise ValueError("Refresh token has been revoked")
+
+        if stored.expires_at < now:
+            raise ValueError("Refresh token has expired")
+
+        return stored
+
+    def rotate_refresh_token(self, *, refresh_token: str, user_id: str) -> tuple[object, str, str]:
+        stored = self.validate_refresh_token(refresh_token=refresh_token)
+        now = datetime.now(timezone.utc)
+
+        self.user_repo.revoke_refresh_token(stored, revoked_at=now)
+
+        access_token = create_access_token(user_id)
+        new_refresh_token = self.create_and_store_refresh_token(user_id=user_id)
+        return stored, access_token, new_refresh_token
