@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from ipaddress import ip_address as parse_ip
 
 from sqlalchemy.orm import Session
 
@@ -34,6 +35,15 @@ class AuthService:
         self.email_worker = email_worker or EmailWorker()
         self.auth_token_service = auth_token_service or AuthTokenService(user_repo)
 
+    @staticmethod
+    def _normalize_ip(ip_value: str | None) -> str | None:
+        if not ip_value:
+            return None
+        try:
+            return str(parse_ip(ip_value))
+        except ValueError:
+            return None
+
     def register(
         self,
         *,
@@ -41,6 +51,8 @@ class AuthService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> User:
+        normalized_ip = self._normalize_ip(ip_address)
+
         existing_email = self.user_repo.get_by_email(payload.email)
         if existing_email:
             raise ConflictAppException("Email already registered")
@@ -62,7 +74,6 @@ class AuthService:
             )
             self.user_repo.create_user(user)
 
-            # Đảm bảo user.id có giá trị trước khi ghi audit log
             self.db.flush()
 
             self.audit_service.log_action(
@@ -71,7 +82,7 @@ class AuthService:
                 action="user_registered",
                 resource_type="user",
                 resource_id=user.id,
-                ip_address=ip_address,
+                ip_address=normalized_ip,
                 user_agent=user_agent,
                 metadata={"email": user.email},
             )
@@ -96,6 +107,7 @@ class AuthService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> tuple[User, str, str]:
+        normalized_ip = self._normalize_ip(ip_address)
         user = self.user_repo.get_by_email(payload.email)
 
         if not user or not verify_password(payload.password, user.password_hash):
@@ -105,7 +117,7 @@ class AuthService:
                     severity="warning",
                     title="Login failed",
                     description="Invalid email or password",
-                    ip_address=ip_address,
+                    ip_address=normalized_ip,
                     event_data={"email": payload.email},
                 )
                 self.db.commit()
@@ -120,7 +132,7 @@ class AuthService:
 
         try:
             user.last_login_at = datetime.now(timezone.utc)
-            user.last_login_ip = ip_address
+            user.last_login_ip = normalized_ip
             user.failed_login_count = 0
             self.user_repo.save_user(user)
 
@@ -134,7 +146,7 @@ class AuthService:
                 action="user_logged_in",
                 resource_type="user",
                 resource_id=user.id,
-                ip_address=ip_address,
+                ip_address=normalized_ip,
                 user_agent=user_agent,
                 metadata={"email": user.email},
             )
@@ -153,6 +165,8 @@ class AuthService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> tuple[User, str, str]:
+        normalized_ip = self._normalize_ip(ip_address)
+
         try:
             stored = self.auth_token_service.validate_refresh_token(refresh_token=refresh_token)
         except ValueError as exc:
@@ -177,7 +191,7 @@ class AuthService:
                 action="access_token_refreshed",
                 resource_type="refresh_token",
                 resource_id=old_token.id,
-                ip_address=ip_address,
+                ip_address=normalized_ip,
                 user_agent=user_agent,
                 metadata={"user_id": str(user.id), "rotation": True},
             )
@@ -196,6 +210,8 @@ class AuthService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> None:
+        normalized_ip = self._normalize_ip(ip_address)
+
         try:
             stored = self.auth_token_service.validate_refresh_token(refresh_token=refresh_token)
         except ValueError as exc:
@@ -213,7 +229,7 @@ class AuthService:
                 action="user_logged_out",
                 resource_type="refresh_token",
                 resource_id=stored.id,
-                ip_address=ip_address,
+                ip_address=normalized_ip,
                 user_agent=user_agent,
                 metadata={"user_id": str(stored.user_id)},
             )
@@ -231,6 +247,8 @@ class AuthService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> int:
+        normalized_ip = self._normalize_ip(ip_address)
+
         try:
             count = self.user_repo.revoke_all_refresh_tokens_for_user(
                 user_id=user_id,
@@ -242,7 +260,7 @@ class AuthService:
                 actor_user_id=user_id,
                 action="user_logged_out_all_sessions",
                 resource_type="refresh_token",
-                ip_address=ip_address,
+                ip_address=normalized_ip,
                 user_agent=user_agent,
                 metadata={"revoked_count": count},
             )

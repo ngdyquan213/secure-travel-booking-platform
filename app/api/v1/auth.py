@@ -1,5 +1,3 @@
-from ipaddress import ip_address as parse_ip
-
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
@@ -21,23 +19,12 @@ from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-
-def normalize_ip(value: str | None) -> str | None:
-    if not value:
-        return None
-    try:
-        return str(parse_ip(value))
-    except ValueError:
-        return None
-
-
 def build_auth_service(db: Session) -> AuthService:
     return AuthService(
         db=db,
         user_repo=UserRepository(db),
         audit_service=AuditService(AuditRepository(db)),
     )
-
 
 @router.post("/register", response_model=UserMeResponse, status_code=status.HTTP_201_CREATED)
 def register(
@@ -49,7 +36,7 @@ def register(
 
     user = service.register(
         payload=payload,
-        ip_address=normalize_ip(request.client.host if request.client else None),
+        ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -74,7 +61,7 @@ def login(
 
     _, access_token, refresh_token = service.login(
         payload=payload,
-        ip_address=normalize_ip(request.client.host if request.client else None),
+        ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -95,7 +82,7 @@ def refresh_access_token(
 
     _, access_token, new_refresh_token = service.refresh_access_token(
         refresh_token=payload.refresh_token,
-        ip_address=normalize_ip(request.client.host if request.client else None),
+        ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -116,7 +103,7 @@ def logout(
 
     service.logout(
         refresh_token=payload.refresh_token,
-        ip_address=normalize_ip(request.client.host if request.client else None),
+        ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -133,7 +120,7 @@ def logout_all(
 
     service.logout_all(
         user_id=str(current_user.id),
-        ip_address=normalize_ip(request.client.host if request.client else None),
+        ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
 
