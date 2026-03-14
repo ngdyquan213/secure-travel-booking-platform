@@ -120,7 +120,7 @@ class CouponService:
     ):
         booking = self.booking_repo.get_by_id_and_user_id(payload.booking_id, user_id)
         if not booking:
-            raise NotFoundAppException("Booking not found")
+            raise ValidationAppException("Booking not found")
 
         coupon = self.coupon_repo.get_by_code(payload.coupon_code)
         self._validate_coupon(coupon=coupon, booking=booking, user_id=user_id)
