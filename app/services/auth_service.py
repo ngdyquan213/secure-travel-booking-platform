@@ -49,7 +49,7 @@ class AuthService:
         if existing_username:
             raise ConflictAppException("Username already taken")
 
-        with self.db.begin():
+        try:
             user = User(
                 email=payload.email,
                 username=payload.username,
@@ -62,6 +62,9 @@ class AuthService:
             )
             self.user_repo.create_user(user)
 
+            # Đảm bảo user.id có giá trị trước khi ghi audit log
+            self.db.flush()
+
             self.audit_service.log_action(
                 actor_type=LogActorType.user,
                 actor_user_id=user.id,
@@ -73,7 +76,12 @@ class AuthService:
                 metadata={"email": user.email},
             )
 
-        self.db.refresh(user)
+            self.db.commit()
+            self.db.refresh(user)
+
+        except Exception:
+            self.db.rollback()
+            raise
 
         self.email_worker.send_welcome_email(
             to_email=user.email,
@@ -89,22 +97,28 @@ class AuthService:
         user_agent: str | None = None,
     ) -> tuple[User, str, str]:
         user = self.user_repo.get_by_email(payload.email)
+
         if not user or not verify_password(payload.password, user.password_hash):
-            self.audit_service.log_security_event(
-                event_type=SecurityEventType.auth,
-                severity="warning",
-                title="Login failed",
-                description="Invalid email or password",
-                ip_address=ip_address,
-                event_data={"email": payload.email},
-            )
-            self.db.commit()
+            try:
+                self.audit_service.log_security_event(
+                    event_type=SecurityEventType.auth,
+                    severity="warning",
+                    title="Login failed",
+                    description="Invalid email or password",
+                    ip_address=ip_address,
+                    event_data={"email": payload.email},
+                )
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                raise
+
             raise AuthenticationAppException("Invalid email or password")
 
         if user.status != UserStatus.active:
             raise AuthenticationAppException("User is not active")
 
-        with self.db.begin():
+        try:
             user.last_login_at = datetime.now(timezone.utc)
             user.last_login_ip = ip_address
             user.failed_login_count = 0
@@ -125,7 +139,12 @@ class AuthService:
                 metadata={"email": user.email},
             )
 
-        return user, access_token, refresh_token
+            self.db.commit()
+            return user, access_token, refresh_token
+
+        except Exception:
+            self.db.rollback()
+            raise
 
     def refresh_access_token(
         self,
@@ -146,7 +165,7 @@ class AuthService:
         if user.status != UserStatus.active:
             raise AuthenticationAppException("User is not active")
 
-        with self.db.begin():
+        try:
             old_token, access_token, new_refresh_token = self.auth_token_service.rotate_refresh_token(
                 refresh_token=refresh_token,
                 user_id=str(user.id),
@@ -163,7 +182,12 @@ class AuthService:
                 metadata={"user_id": str(user.id), "rotation": True},
             )
 
-        return user, access_token, new_refresh_token
+            self.db.commit()
+            return user, access_token, new_refresh_token
+
+        except Exception:
+            self.db.rollback()
+            raise
 
     def logout(
         self,
@@ -177,7 +201,7 @@ class AuthService:
         except ValueError as exc:
             raise AuthenticationAppException(str(exc)) from exc
 
-        with self.db.begin():
+        try:
             self.user_repo.revoke_refresh_token(
                 stored,
                 revoked_at=datetime.now(timezone.utc),
@@ -194,6 +218,12 @@ class AuthService:
                 metadata={"user_id": str(stored.user_id)},
             )
 
+            self.db.commit()
+
+        except Exception:
+            self.db.rollback()
+            raise
+
     def logout_all(
         self,
         *,
@@ -201,7 +231,7 @@ class AuthService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> int:
-        with self.db.begin():
+        try:
             count = self.user_repo.revoke_all_refresh_tokens_for_user(
                 user_id=user_id,
                 revoked_at=datetime.now(timezone.utc),
@@ -217,4 +247,9 @@ class AuthService:
                 metadata={"revoked_count": count},
             )
 
-        return count
+            self.db.commit()
+            return count
+
+        except Exception:
+            self.db.rollback()
+            raise
