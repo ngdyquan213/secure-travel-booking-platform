@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
+from ipaddress import ip_address as parse_ip
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -34,6 +35,15 @@ class BookingService:
         self.email_worker = email_worker or EmailWorker()
         self.notification_worker = notification_worker or NotificationWorker()
 
+    @staticmethod
+    def _normalize_ip(ip_value: str | None) -> str | None:
+        if not ip_value:
+            return None
+        try:
+            return str(parse_ip(ip_value))
+        except ValueError:
+            return None
+
     def create_booking(
         self,
         *,
@@ -42,60 +52,61 @@ class BookingService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> Booking:
-        with self.db.begin():
-            flight = self.flight_repo.get_by_id_for_update(payload.flight_id)
-            if not flight:
-                raise ValueError("Flight not found")
+        flight = self.flight_repo.get_by_id_for_update(payload.flight_id)
+        if not flight:
+            raise ValueError("Flight not found")
 
-            if flight.status != "scheduled":
-                raise ValueError("Flight is not bookable")
+        if flight.status != "scheduled":
+            raise ValueError("Flight is not bookable")
 
-            if flight.available_seats < payload.quantity:
-                raise ValueError("Not enough available seats")
+        if flight.available_seats < payload.quantity:
+            raise ValueError("Not enough available seats")
 
-            total_price = Decimal(flight.base_price) * payload.quantity
+        total_price = Decimal(flight.base_price) * payload.quantity
 
-            booking = Booking(
-                booking_code=f"BK-{uuid4().hex[:10].upper()}",
-                user_id=user_id,
-                status=BookingStatus.pending,
-                total_base_amount=total_price,
-                total_discount_amount=Decimal("0.00"),
-                total_final_amount=total_price,
-                currency="VND",
-                payment_status=PaymentStatus.pending,
-                booked_at=datetime.now(timezone.utc),
-            )
-            self.booking_repo.add_booking(booking)
+        booking = Booking(
+            booking_code=f"BK-{uuid4().hex[:10].upper()}",
+            user_id=user_id,
+            status=BookingStatus.pending,
+            total_base_amount=total_price,
+            total_discount_amount=Decimal("0.00"),
+            total_final_amount=total_price,
+            currency="VND",
+            payment_status=PaymentStatus.pending,
+            booked_at=datetime.now(timezone.utc),
+        )
+        self.booking_repo.add_booking(booking)
+        self.db.flush()
 
-            item = BookingItem(
-                booking_id=booking.id,
-                item_type=BookingItemType.flight,
-                flight_id=flight.id,
-                quantity=payload.quantity,
-                unit_price=flight.base_price,
-                total_price=total_price,
-            )
-            self.booking_repo.add_booking_item(item)
+        item = BookingItem(
+            booking_id=booking.id,
+            item_type=BookingItemType.flight,
+            flight_id=flight.id,
+            quantity=payload.quantity,
+            unit_price=flight.base_price,
+            total_price=total_price,
+        )
+        self.booking_repo.add_booking_item(item)
 
-            flight.available_seats -= payload.quantity
-            self.flight_repo.save(flight)
+        flight.available_seats -= payload.quantity
+        self.flight_repo.save(flight)
 
-            self.audit_service.log_action(
-                actor_type=LogActorType.user,
-                actor_user_id=booking.user_id,
-                action="booking_created",
-                resource_type="booking",
-                resource_id=booking.id,
-                ip_address=ip_address,
-                user_agent=user_agent,
-                metadata={
-                    "flight_id": str(flight.id),
-                    "quantity": payload.quantity,
-                    "total_price": str(total_price),
-                },
-            )
+        self.audit_service.log_action(
+            actor_type=LogActorType.user,
+            actor_user_id=booking.user_id,
+            action="booking_created",
+            resource_type="booking",
+            resource_id=booking.id,
+            ip_address=self._normalize_ip(ip_address),
+            user_agent=user_agent,
+            metadata={
+                "flight_id": str(flight.id),
+                "quantity": payload.quantity,
+                "total_price": str(total_price),
+            },
+        )
 
+        self.db.flush()
         self.db.refresh(booking)
 
         user = self.db.query(User).filter(User.id == booking.user_id).first()
