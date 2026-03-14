@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ipaddress import ip_address as parse_ip
 import logging
 from pathlib import Path
 
@@ -89,6 +90,15 @@ class UploadService:
 
         return total_written
 
+    @staticmethod
+    def _normalize_ip(ip_value: str | None) -> str | None:
+        if not ip_value:
+            return None
+        try:
+            return str(parse_ip(ip_value))
+        except ValueError:
+            return None
+
     def upload_document(
         self,
         *,
@@ -121,6 +131,7 @@ class UploadService:
 
         stored_filename = generate_stored_filename(file.filename or "file")
         storage_path = upload_dir / stored_filename
+        normalized_ip = self._normalize_ip(ip_address)
 
         logger.info(
             "upload_started | filename=%s mime_type=%s user_id=%s booking_id=%s traveler_id=%s",
@@ -133,7 +144,7 @@ class UploadService:
 
         file_size = self._save_upload_to_disk(file, storage_path)
 
-        with self.db.begin():
+        try:
             document = UploadedDocument(
                 user_id=user_id,
                 booking_id=booking_id,
@@ -148,6 +159,7 @@ class UploadService:
                 is_private=True,
             )
             self.document_repo.add_document(document)
+            self.db.flush()
 
             self.audit_service.log_action(
                 actor_type=LogActorType.user,
@@ -155,7 +167,7 @@ class UploadService:
                 action="document_uploaded",
                 resource_type="uploaded_document",
                 resource_id=document.id,
-                ip_address=ip_address,
+                ip_address=normalized_ip,
                 user_agent=user_agent,
                 metadata={
                     "document_type": document_type,
@@ -167,7 +179,12 @@ class UploadService:
                 },
             )
 
-        self.db.refresh(document)
+            self.db.commit()
+            self.db.refresh(document)
+        except Exception:
+            self.db.rollback()
+            storage_path.unlink(missing_ok=True)
+            raise
 
         logger.info(
             "upload_completed | document_id=%s filename=%s file_size=%s user_id=%s",
@@ -198,13 +215,15 @@ class UploadService:
         if not file_path.exists():
             raise NotFoundAppException("Document file not found")
 
+        normalized_ip = self._normalize_ip(ip_address)
+
         self.audit_service.log_action(
             actor_type=LogActorType.user,
             actor_user_id=user_id,
             action="document_downloaded",
             resource_type="uploaded_document",
             resource_id=document.id,
-            ip_address=ip_address,
+            ip_address=normalized_ip,
             user_agent=user_agent,
             metadata={"storage_key": document.storage_key},
         )
