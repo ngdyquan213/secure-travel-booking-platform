@@ -10,6 +10,7 @@ class HotelRoomResponse(BaseModel):
     capacity: int
     base_price_per_night: Decimal
     total_rooms: int
+    available_rooms: int | None = None
 
 
 class HotelResponse(BaseModel):

@@ -8,6 +8,8 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+from app.utils.request_context import get_client_ip
+
 logger = logging.getLogger("app.http")
 
 
@@ -15,7 +17,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         start = time.perf_counter()
 
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = get_client_ip(request, default="unknown")
         method = request.method
         path = request.url.path
 

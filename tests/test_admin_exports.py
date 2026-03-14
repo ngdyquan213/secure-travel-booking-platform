@@ -4,11 +4,19 @@ from decimal import Decimal
 from app.core.security import get_password_hash
 from app.models.audit import AuditLog
 from app.models.booking import Booking
-from app.models.enums import BookingStatus, LogActorType, PaymentMethod, PaymentStatus, RefundStatus, UserStatus
+from app.models.enums import (
+    BookingStatus,
+    LogActorType,
+    PaymentMethod,
+    PaymentStatus,
+    RefundStatus,
+    UserStatus,
+)
 from app.models.payment import Payment
 from app.models.refund import Refund
 from app.models.role import Role, UserRole
 from app.models.user import User
+from app.services.admin_export_service import AdminExportService
 
 
 def create_admin_and_login(client, db_session):
@@ -150,3 +158,68 @@ def test_export_audit_logs_csv(client, db_session):
     content = resp.content.decode("utf-8-sig")
     assert "action" in content
     assert "export_test_action" in content
+
+
+def test_export_bookings_csv_sanitizes_formula_injection(client, db_session):
+    _, token = create_admin_and_login(client, db_session)
+    user = seed_user(db_session, "formula")
+
+    booking = Booking(
+        booking_code="=CMD|' /C calc'!A0",
+        user_id=user.id,
+        status=BookingStatus.pending,
+        total_base_amount=Decimal("1000000.00"),
+        total_discount_amount=Decimal("0.00"),
+        total_final_amount=Decimal("1000000.00"),
+        currency="VND",
+        payment_status=PaymentStatus.pending,
+        booked_at=datetime.now(timezone.utc),
+    )
+    db_session.add(booking)
+    db_session.commit()
+
+    resp = client.get(
+        "/api/v1/admin/bookings/export.csv",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    content = resp.content.decode("utf-8-sig")
+    assert "'=CMD|' /C calc'!A0" in content
+
+
+def test_export_bookings_csv_fetches_all_batches():
+    class FakeBooking:
+        def __init__(self, index: int) -> None:
+            self.id = index
+            self.booking_code = f"EXPORT-{index}"
+            self.user_id = index
+            self.status = BookingStatus.pending
+            self.total_final_amount = Decimal("1000.00")
+            self.currency = "VND"
+            self.payment_status = PaymentStatus.pending
+            self.booked_at = datetime.now(timezone.utc)
+            self.cancelled_at = None
+
+    class FakeAdminRepo:
+        def list_bookings(
+            self,
+            *,
+            skip: int,
+            limit: int,
+            status=None,
+            payment_status=None,
+            booking_code=None,
+            sort_by="booked_at",
+            sort_order="desc",
+        ):
+            items = [FakeBooking(index) for index in range(2050)]
+            return items[skip : skip + limit]
+
+    export_service = AdminExportService(FakeAdminRepo())
+
+    csv_bytes = export_service.export_bookings_csv()
+    content = csv_bytes.decode("utf-8-sig")
+
+    assert "EXPORT-0" in content
+    assert "EXPORT-2049" in content

@@ -6,10 +6,11 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundAppException, ValidationAppException
 from app.models.booking import Traveler
-from app.models.enums import BookingItemType, DocumentType, LogActorType, TravelerType
+from app.models.enums import BookingItemType, LogActorType
 from app.repositories.booking_repository import BookingRepository
 from app.schemas.traveler import TravelerCreateRequest
 from app.services.audit_service import AuditService
+from app.utils.enums import enum_to_str
 
 
 class TravelerService:
@@ -28,7 +29,9 @@ class TravelerService:
             raise ValidationAppException("Booking has no items")
 
         if len(booking.items) != 1:
-            raise ValidationAppException("Traveler management currently supports single-item booking only")
+            raise ValidationAppException(
+                "Traveler management currently supports single-item booking only"
+            )
 
         item = booking.items[0]
         if item.item_type != BookingItemType.tour:
@@ -61,32 +64,20 @@ class TravelerService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> Traveler:
-        booking = self.booking_repo.get_by_id_and_user_id(booking_id, user_id)
-        if not booking:
-            raise NotFoundAppException("Booking not found")
+        with self.db.begin_nested():
+            booking = self.booking_repo.get_by_id_and_user_id_for_update(booking_id, user_id)
+            if not booking:
+                raise NotFoundAppException("Booking not found")
 
-        expected_counts = self._get_expected_tour_counts(booking)
-        current_counts = Counter(
-            t.traveler_type.value if hasattr(t.traveler_type, "value") else str(t.traveler_type)
-            for t in booking.travelers
-        )
+            expected_counts = self._get_expected_tour_counts(booking)
+            current_counts = Counter(enum_to_str(t.traveler_type) for t in booking.travelers)
+            traveler_type = payload.traveler_type
 
-        try:
-            traveler_type = TravelerType(payload.traveler_type)
-        except ValueError as exc:
-            raise ValidationAppException("Invalid traveler type") from exc
+            if current_counts[traveler_type.value] >= expected_counts[traveler_type.value]:
+                raise ValidationAppException(
+                    f"Traveler count exceeded for type: {traveler_type.value}"
+                )
 
-        if current_counts[traveler_type.value] >= expected_counts[traveler_type.value]:
-            raise ValidationAppException(f"Traveler count exceeded for type: {traveler_type.value}")
-
-        document_type = None
-        if payload.document_type is not None:
-            try:
-                document_type = DocumentType(payload.document_type)
-            except ValueError as exc:
-                raise ValidationAppException("Invalid document type") from exc
-
-        with self.db.begin():
             traveler = Traveler(
                 booking_id=booking.id,
                 full_name=payload.full_name,
@@ -94,7 +85,7 @@ class TravelerService:
                 date_of_birth=payload.date_of_birth,
                 passport_number=payload.passport_number,
                 nationality=payload.nationality,
-                document_type=document_type,
+                document_type=payload.document_type,
             )
             self.booking_repo.add_traveler(traveler)
 
@@ -112,6 +103,12 @@ class TravelerService:
                     "full_name": payload.full_name,
                 },
             )
+
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
         self.db.refresh(traveler)
         return traveler

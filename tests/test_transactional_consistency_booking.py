@@ -8,7 +8,9 @@ from app.models.user import User
 from app.repositories.booking_repository import BookingRepository
 
 
-def create_user_and_login(client, db_session, *, email: str, username: str, password: str = "Password123"):
+def create_user_and_login(
+    client, db_session, *, email: str, username: str, password: str = "Password123"
+):
     user = User(
         email=email,
         username=username,

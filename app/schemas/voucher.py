@@ -3,17 +3,25 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
+from app.models.enums import (
+    BookingItemType,
+    BookingStatus,
+    DocumentType,
+    PaymentStatus,
+    TravelerType,
+)
+
 
 class VoucherTravelerResponse(BaseModel):
     full_name: str
-    traveler_type: str
+    traveler_type: TravelerType
     passport_number: str | None = None
     nationality: str | None = None
-    document_type: str | None = None
+    document_type: DocumentType | None = None
 
 
 class VoucherItemResponse(BaseModel):
-    item_type: str
+    item_type: BookingItemType
     reference_id: str | None = None
     title: str
     description: str | None = None
@@ -27,8 +35,8 @@ class VoucherItemResponse(BaseModel):
 class BookingVoucherResponse(BaseModel):
     booking_id: str
     booking_code: str
-    booking_status: str
-    payment_status: str
+    booking_status: BookingStatus
+    payment_status: PaymentStatus
     booked_at: datetime
     customer_name: str
     customer_email: str

@@ -1,10 +1,12 @@
 from sqlalchemy.orm import Session
 
+from app.core.constants import ALL_ADMIN_PERMISSIONS
 from app.core.database import SessionLocal
+from app.core.rbac import ensure_role_has_permissions
 from app.core.security import get_password_hash
+from app.models.enums import UserStatus
 from app.models.role import Role, UserRole
 from app.models.user import User
-from app.models.enums import UserStatus
 
 
 def main() -> None:
@@ -17,6 +19,11 @@ def main() -> None:
                 admin_role = Role(name="admin", description="Administrator")
                 db.add(admin_role)
                 db.flush()
+            ensure_role_has_permissions(
+                db,
+                role=admin_role,
+                permission_names=ALL_ADMIN_PERMISSIONS,
+            )
 
             user = db.query(User).filter(User.email == "admin@example.com").first()
             if not user:

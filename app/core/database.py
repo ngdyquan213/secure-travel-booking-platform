@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.models import Base
 
 engine = create_engine(
-    settings.SQLALCHEMY_DATABASE_URI,
+    settings.DATABASE_URL,
     pool_pre_ping=True,
 )
 

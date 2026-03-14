@@ -36,7 +36,7 @@ class User(Base, TimestampMixin):
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     status: Mapped[UserStatus] = mapped_column(
-        Enum(UserStatus, name="user_status"),
+        Enum(UserStatus, name="user_status", native_enum=False),
         nullable=False,
         default=UserStatus.active,
     )
@@ -67,16 +67,22 @@ class User(Base, TimestampMixin):
     )
     bookings: Mapped[list[Booking]] = relationship("Booking", back_populates="user")
     coupon_usages: Mapped[list[CouponUsage]] = relationship("CouponUsage", back_populates="user")
-    uploaded_documents: Mapped[list[UploadedDocument]] = relationship("UploadedDocument", back_populates="user")
+    uploaded_documents: Mapped[list[UploadedDocument]] = relationship(
+        "UploadedDocument", back_populates="user"
+    )
     audit_logs: Mapped[list[AuditLog]] = relationship("AuditLog", back_populates="actor_user")
-    security_events: Mapped[list[SecurityEvent]] = relationship("SecurityEvent", back_populates="related_user")
+    security_events: Mapped[list[SecurityEvent]] = relationship(
+        "SecurityEvent", back_populates="related_user"
+    )
     initiated_payments: Mapped[list[Payment]] = relationship(
         "Payment",
         back_populates="initiated_by_user",
         foreign_keys="Payment.initiated_by",
     )
     created_coupons: Mapped[list[Coupon]] = relationship("Coupon", back_populates="creator")
-    updated_app_settings: Mapped[list[AppSetting]] = relationship("AppSetting", back_populates="updated_by_user")
+    updated_app_settings: Mapped[list[AppSetting]] = relationship(
+        "AppSetting", back_populates="updated_by_user"
+    )
 
 
 class RefreshToken(Base):

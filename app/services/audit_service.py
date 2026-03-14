@@ -3,14 +3,30 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from app.core.logging import request_id_ctx_var
 from app.models.audit import AuditLog, SecurityEvent
 from app.models.enums import LogActorType, SecurityEventType
 from app.repositories.audit_repository import AuditRepository
+from app.utils.ip_utils import normalize_ip
 
 
 class AuditService:
     def __init__(self, audit_repo: AuditRepository) -> None:
         self.audit_repo = audit_repo
+
+    @staticmethod
+    def _resolve_request_id(request_id: UUID | None) -> UUID | None:
+        if request_id is not None:
+            return request_id
+
+        current_request_id = request_id_ctx_var.get()
+        if not current_request_id:
+            return None
+
+        try:
+            return UUID(current_request_id)
+        except ValueError:
+            return None
 
     def log_action(
         self,
@@ -31,9 +47,9 @@ class AuditService:
             action=action,
             resource_type=resource_type,
             resource_id=resource_id,
-            ip_address=ip_address,
+            ip_address=normalize_ip(ip_address),
             user_agent=user_agent,
-            request_id=request_id,
+            request_id=self._resolve_request_id(request_id),
             metadata_json=metadata,
         )
         return self.audit_repo.add_audit_log(log)
@@ -55,7 +71,7 @@ class AuditService:
             title=title,
             description=description,
             related_user_id=related_user_id,
-            ip_address=ip_address,
+            ip_address=normalize_ip(ip_address),
             event_data=event_data,
         )
         return self.audit_repo.add_security_event(event)

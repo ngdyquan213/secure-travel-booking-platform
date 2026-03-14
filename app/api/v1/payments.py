@@ -1,19 +1,25 @@
-from fastapi import APIRouter, Depends, Header, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import (
+    build_payment_callback_service,
+    build_payment_service,
+    get_current_user,
+)
+from app.core.config import settings
 from app.core.database import get_db
-from app.repositories.audit_repository import AuditRepository
+from app.core.exceptions import AppException, NotFoundAppException
 from app.repositories.booking_repository import BookingRepository
 from app.repositories.payment_repository import PaymentRepository
 from app.schemas.payment import (
     PaymentCallbackRequest,
+    PaymentCallbackResponse,
     PaymentInitiateRequest,
     PaymentResponse,
+    PaymentStatusResponse,
 )
-from app.services.audit_service import AuditService
-from app.services.payment_callback_service import PaymentCallbackService
-from app.services.payment_service import PaymentService
+from app.utils.enums import enum_to_str
+from app.utils.request_context import get_client_ip, get_user_agent
 from app.utils.response_mappers import payment_to_dict
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -27,50 +33,99 @@ def initiate_payment(
     db: Session = Depends(get_db),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> PaymentResponse:
-    audit_service = AuditService(AuditRepository(db))
-    service = PaymentService(
-        db=db,
-        booking_repo=BookingRepository(db),
-        payment_repo=PaymentRepository(db),
-        audit_service=audit_service,
-    )
+    service = build_payment_service(db)
 
     payment = service.initiate_payment(
         booking_id=payload.booking_id,
         user_id=str(current_user.id),
         payment_method=payload.payment_method,
         idempotency_key=idempotency_key,
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
     )
 
     return PaymentResponse(**payment_to_dict(payment))
 
 
-@router.post("/callback", response_model=PaymentResponse)
+@router.post("/callback", response_model=PaymentCallbackResponse)
 def payment_callback(
     payload: PaymentCallbackRequest,
     request: Request,
     db: Session = Depends(get_db),
-) -> PaymentResponse:
-    audit_service = AuditService(AuditRepository(db))
-    service = PaymentCallbackService(
-        db=db,
-        booking_repo=BookingRepository(db),
-        payment_repo=PaymentRepository(db),
-        audit_service=audit_service,
+) -> PaymentCallbackResponse:
+    service = build_payment_callback_service(db)
+
+    try:
+        payment, _booking = service.process_callback(
+            gateway_name=payload.gateway_name,
+            gateway_order_ref=payload.gateway_order_ref,
+            gateway_transaction_ref=payload.gateway_transaction_ref,
+            amount=str(payload.amount),
+            currency=payload.currency,
+            status=payload.status,
+            signature=payload.signature,
+            ip_address=get_client_ip(request),
+            user_agent=get_user_agent(request),
+        )
+    except AppException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+    return PaymentCallbackResponse(
+        success=True,
+        message="Payment callback processed",
+        **payment_to_dict(payment),
     )
 
-    payment, _booking = service.process_callback(
-        gateway_name=payload.gateway_name,
-        gateway_order_ref=payload.gateway_order_ref,
-        gateway_transaction_ref=payload.gateway_transaction_ref,
-        amount=str(payload.amount),
-        currency=payload.currency,
-        status=payload.status,
-        signature=payload.signature,
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-    )
+
+@router.post("/{payment_id}/simulate-success", response_model=PaymentResponse)
+def simulate_payment_success(
+    payment_id: str,
+    request: Request,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PaymentResponse:
+    if not settings.ALLOW_PAYMENT_SIMULATION:
+        raise NotFoundAppException("Payment simulation is disabled")
+
+    service = build_payment_service(db)
+
+    try:
+        payment = service.simulate_success(
+            payment_id=payment_id,
+            user_id=str(current_user.id),
+            ip_address=get_client_ip(request),
+            user_agent=get_user_agent(request),
+        )
+    except AppException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
     return PaymentResponse(**payment_to_dict(payment))
+
+
+@router.get("/booking/{booking_id}", response_model=PaymentStatusResponse)
+def get_booking_payment_status(
+    booking_id: str,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PaymentStatusResponse:
+    booking_repo = BookingRepository(db)
+    payment_repo = PaymentRepository(db)
+
+    booking = booking_repo.get_by_id_and_user_id(booking_id, str(current_user.id))
+    if not booking:
+        return PaymentStatusResponse(
+            booking_id=booking_id,
+            booking_payment_status="not_found",
+            payment=None,
+        )
+
+    payment = payment_repo.get_latest_by_booking_id(booking_id)
+    return PaymentStatusResponse(
+        booking_id=str(booking.id),
+        booking_payment_status=enum_to_str(booking.payment_status),
+        payment=PaymentResponse(**payment_to_dict(payment)) if payment else None,
+    )

@@ -3,7 +3,14 @@ from decimal import Decimal
 
 from app.core.security import get_password_hash
 from app.models.booking import Booking, BookingItem
-from app.models.enums import BookingItemType, BookingStatus, PaymentMethod, PaymentStatus, UserStatus
+from app.models.enums import (
+    BookingItemType,
+    BookingStatus,
+    PaymentMethod,
+    PaymentStatus,
+    RefundStatus,
+    UserStatus,
+)
 from app.models.flight import Airline, Airport, Flight
 from app.models.payment import Payment
 from app.models.refund import Refund
@@ -164,6 +171,12 @@ def test_admin_can_update_refund_status(client, db_session):
     body = resp.json()
     assert body["status"] == "processed"
     assert body["reason"] == "Reviewed and approved"
+
+    db_session.expire_all()
+    saved_refund = db_session.query(Refund).filter(Refund.id == refund.id).first()
+    assert saved_refund is not None
+    assert saved_refund.status == RefundStatus.processed
+    assert saved_refund.reason == "Reviewed and approved"
 
 
 def test_admin_can_list_cancelled_bookings(client, db_session):

@@ -13,6 +13,9 @@ class CouponRepository:
     def get_by_code(self, code: str) -> Coupon | None:
         return self.db.query(Coupon).filter(Coupon.code == code).first()
 
+    def get_by_code_for_update(self, code: str) -> Coupon | None:
+        return self.db.query(Coupon).filter(Coupon.code == code).with_for_update().first()
+
     def list_coupons(self, skip: int = 0, limit: int = 50) -> list[Coupon]:
         return self.db.query(Coupon).offset(skip).limit(limit).all()
 

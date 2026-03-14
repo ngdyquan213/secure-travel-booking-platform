@@ -15,12 +15,12 @@ def build_error_payload(
     request: Request,
     error_code: str,
     message: str,
-    detail: dict | None = None,
+    detail: object | None = None,
 ) -> dict:
     return {
         "error_code": error_code,
         "message": message,
-        "detail": detail,
+        "detail": message if detail is None else detail,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "path": str(request.url.path),
     }
@@ -33,19 +33,28 @@ async def app_exception_handler(request: Request, exc: AppException):
             request=request,
             error_code=exc.error_code,
             message=exc.message,
-            detail=exc.detail,
+            detail=exc.detail or None,
         ),
     )
 
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    sanitized_errors = []
+    for error in exc.errors():
+        sanitized_error = dict(error)
+        if "ctx" in sanitized_error and sanitized_error["ctx"]:
+            sanitized_error["ctx"] = {
+                key: str(value) for key, value in sanitized_error["ctx"].items()
+            }
+        sanitized_errors.append(sanitized_error)
+
     return JSONResponse(
         status_code=422,
         content=build_error_payload(
             request=request,
             error_code="REQUEST_VALIDATION_ERROR",
             message="Request validation failed",
-            detail={"errors": exc.errors()},
+            detail={"errors": sanitized_errors},
         ),
     )
 
@@ -59,7 +68,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             request=request,
             error_code="HTTP_ERROR",
             message=message,
-            detail=exc.detail if isinstance(exc.detail, dict) else None,
+            detail=exc.detail,
         ),
     )
 

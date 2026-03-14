@@ -5,12 +5,31 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, Date, DateTime, Enum, ForeignKey, Index, Integer, JSON, Numeric, String, Text, func
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
-from app.models.enums import BookingItemType, BookingStatus, DocumentType, PaymentStatus, TravelerType
+from app.models.enums import (
+    BookingItemType,
+    BookingStatus,
+    DocumentType,
+    PaymentStatus,
+    TravelerType,
+)
 
 if TYPE_CHECKING:
     from app.models.coupon import Coupon, CouponUsage
@@ -33,17 +52,25 @@ class Booking(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     booking_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
 
     status: Mapped[BookingStatus] = mapped_column(
-        Enum(BookingStatus, name="booking_status"),
+        Enum(BookingStatus, name="booking_status", native_enum=False),
         nullable=False,
         default=BookingStatus.pending,
     )
 
-    total_base_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
-    total_discount_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
-    total_final_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+    total_base_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+    total_discount_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+    total_final_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="VND")
 
     coupon_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -53,7 +80,7 @@ class Booking(Base, TimestampMixin):
     )
 
     payment_status: Mapped[PaymentStatus] = mapped_column(
-        Enum(PaymentStatus, name="booking_payment_status"),
+        Enum(PaymentStatus, name="booking_payment_status", native_enum=False),
         nullable=False,
         default=PaymentStatus.pending,
     )
@@ -86,7 +113,9 @@ class Booking(Base, TimestampMixin):
         back_populates="booking",
         cascade="all, delete-orphan",
     )
-    uploaded_documents: Mapped[list[UploadedDocument]] = relationship("UploadedDocument", back_populates="booking")
+    uploaded_documents: Mapped[list[UploadedDocument]] = relationship(
+        "UploadedDocument", back_populates="booking"
+    )
 
 
 class BookingItem(Base):
@@ -109,7 +138,7 @@ class BookingItem(Base):
     )
 
     item_type: Mapped[BookingItemType] = mapped_column(
-        Enum(BookingItemType, name="booking_item_type"),
+        Enum(BookingItemType, name="booking_item_type", native_enum=False),
         nullable=False,
     )
 
@@ -144,7 +173,9 @@ class BookingItem(Base):
     booking: Mapped[Booking] = relationship("Booking", back_populates="items")
     flight: Mapped[Flight | None] = relationship("Flight", back_populates="booking_items")
     hotel_room: Mapped[HotelRoom | None] = relationship("HotelRoom", back_populates="booking_items")
-    tour_schedule: Mapped["TourSchedule | None"] = relationship("TourSchedule", back_populates="booking_items")
+    tour_schedule: Mapped["TourSchedule | None"] = relationship(
+        "TourSchedule", back_populates="booking_items"
+    )
 
 
 class Traveler(Base):
@@ -158,14 +189,14 @@ class Traveler(Base):
     )
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     traveler_type: Mapped[TravelerType] = mapped_column(
-        Enum(TravelerType, name="traveler_type_for_booking"),
+        Enum(TravelerType, name="traveler_type_for_booking", native_enum=False),
         nullable=False,
     )
     date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
     passport_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     nationality: Mapped[str | None] = mapped_column(String(100), nullable=True)
     document_type: Mapped[DocumentType | None] = mapped_column(
-        Enum(DocumentType, name="traveler_document_type"),
+        Enum(DocumentType, name="traveler_document_type", native_enum=False),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(

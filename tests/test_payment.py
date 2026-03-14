@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.booking import Booking, BookingItem
 from app.models.enums import (
@@ -105,7 +106,10 @@ def test_initiate_payment_success(client, db_session):
             "booking_id": str(booking.id),
             "payment_method": "vnpay",
         },
-        headers={"Authorization": f"Bearer {token}"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "init-payment-001",
+        },
     )
 
     assert resp.status_code == 201
@@ -148,7 +152,9 @@ def test_payment_idempotency_returns_same_payment(client, db_session):
     assert body1["gateway_order_ref"] == body2["gateway_order_ref"]
 
 
-def test_simulate_success_updates_payment_and_booking(client, db_session):
+def test_simulate_success_updates_payment_and_booking(client, db_session, monkeypatch):
+    monkeypatch.setattr(settings, "ALLOW_PAYMENT_SIMULATION", True)
+
     user, token = create_user_and_login(
         client,
         db_session,
@@ -163,7 +169,7 @@ def test_simulate_success_updates_payment_and_booking(client, db_session):
             "booking_id": str(booking.id),
             "payment_method": "momo",
         },
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "idem-payment-001"},
     )
     assert initiate_resp.status_code == 201
 
@@ -171,7 +177,7 @@ def test_simulate_success_updates_payment_and_booking(client, db_session):
 
     success_resp = client.post(
         f"/api/v1/payments/{payment_id}/simulate-success",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "idem-payment-001"},
     )
     assert success_resp.status_code == 200
 
@@ -191,6 +197,38 @@ def test_simulate_success_updates_payment_and_booking(client, db_session):
     assert status_body["booking_payment_status"] == "paid"
     assert status_body["payment"] is not None
     assert status_body["payment"]["status"] == "paid"
+
+
+def test_simulate_success_is_disabled_by_default(client, db_session):
+    user, token = create_user_and_login(
+        client,
+        db_session,
+        "payment-sim-off@example.com",
+        "payment_sim_off",
+    )
+    booking = seed_booking_for_user(db_session, str(user.id))
+
+    initiate_resp = client.post(
+        "/api/v1/payments/initiate",
+        json={
+            "booking_id": str(booking.id),
+            "payment_method": "momo",
+        },
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "idem-payment-sim-off",
+        },
+    )
+    assert initiate_resp.status_code == 201
+
+    payment_id = initiate_resp.json()["id"]
+
+    disabled_resp = client.post(
+        f"/api/v1/payments/{payment_id}/simulate-success",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert disabled_resp.status_code == 404
+    assert disabled_resp.json()["error_code"] == "NOT_FOUND"
 
 
 def test_user_cannot_initiate_payment_for_other_users_booking(client, db_session):
@@ -215,7 +253,10 @@ def test_user_cannot_initiate_payment_for_other_users_booking(client, db_session
             "booking_id": str(booking.id),
             "payment_method": "stripe",
         },
-        headers={"Authorization": f"Bearer {attacker_token}"},
+        headers={
+            "Authorization": f"Bearer {attacker_token}",
+            "Idempotency-Key": "idem-payment-001",
+        },
     )
 
     assert resp.status_code == 400

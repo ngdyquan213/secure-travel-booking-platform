@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     APP_NAME: str = "Secure Travel Booking Platform"
-    ENVIRONMENT: Literal["development", "test", "production"] = "development"
+    ENVIRONMENT: Literal["development", "test", "staging", "production"] = "development"
     DEBUG: bool = True
 
     SECRET_KEY: str = "change-me-super-secret-key"
@@ -16,7 +16,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/secure_travel_booking"
+    DATABASE_URL: str = (
+        "postgresql+psycopg2://postgres:postgres@localhost:5432/secure_travel_booking"
+    )
     PAYMENT_CALLBACK_SECRET: str = "change-me-payment-secret"
 
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -28,20 +30,16 @@ class Settings(BaseSettings):
     RATE_LIMIT_UPLOAD_PER_MINUTE: int = 20
     RATE_LIMIT_PAYMENT_CALLBACK_PER_MINUTE: int = 50
     RATE_LIMIT_DEFAULT_PER_MINUTE: int = 120
+    AUTH_MAX_FAILED_LOGINS: int = 5
+    AUTH_LOCKOUT_MINUTES: int = 15
 
     CORS_ORIGINS: str = "http://localhost,http://127.0.0.1"
     TRUSTED_HOSTS: str = "localhost,127.0.0.1,testserver"
 
     STORAGE_BACKEND: Literal["local"] = "local"
-
     LOCAL_UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE_BYTES: int = 10 * 1024 * 1024
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        case_sensitive=True,
-        extra="ignore",
-    )
+    ALLOW_PAYMENT_SIMULATION: bool = False
 
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
@@ -49,22 +47,39 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = "postgres"
     POSTGRES_DB: str = "secure_travel_booking"
 
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
+    @model_validator(mode="after")
+    def apply_derived_defaults(self) -> Settings:
+        if "DATABASE_URL" not in self.model_fields_set:
+            self.DATABASE_URL = (
+                f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+                f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+            )
+
+        return self
+
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:
-        return (
-            f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-            f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-        )
-
-    # DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/secure_travel_booking"
+        return self.DATABASE_URL
 
     ALLOWED_UPLOAD_EXTENSIONS: str = ".pdf,.png,.jpg,.jpeg"
     ALLOWED_UPLOAD_MIME_TYPES: str = "application/pdf,image/png,image/jpeg"
-    
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, value: str) -> str:
-        if len(value.strip()) < 32:
+        weak_secret_values = {
+            "change-me-super-secret-key",
+            "change-me-payment-secret",
+            "secret",
+            "changeme",
+        }
+        if len(value.strip()) < 32 and value not in weak_secret_values:
             raise ValueError("SECRET_KEY must be at least 32 characters")
         return value
 
@@ -115,9 +130,23 @@ class Settings(BaseSettings):
             raise ValueError("MAX_UPLOAD_SIZE_BYTES must be > 0")
         return value
 
+    @field_validator("AUTH_MAX_FAILED_LOGINS")
+    @classmethod
+    def validate_auth_max_failed_logins(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("AUTH_MAX_FAILED_LOGINS must be > 0")
+        return value
+
+    @field_validator("AUTH_LOCKOUT_MINUTES")
+    @classmethod
+    def validate_auth_lockout_minutes(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("AUTH_LOCKOUT_MINUTES must be > 0")
+        return value
+
     @model_validator(mode="after")
-    def validate_environment_rules(self):
-        if self.ENVIRONMENT == "production":
+    def validate_environment_rules(self) -> Settings:
+        if self.ENVIRONMENT in {"staging", "production"}:
             weak_secret_values = {
                 "change-me-super-secret-key",
                 "change-me-payment-secret",
@@ -126,21 +155,27 @@ class Settings(BaseSettings):
             }
 
             if self.DEBUG:
-                raise ValueError("DEBUG must be false in production")
+                raise ValueError("DEBUG must be false in staging/production")
 
             if self.SECRET_KEY in weak_secret_values:
-                raise ValueError("SECRET_KEY must not use a default/weak value in production")
+                raise ValueError(
+                    "SECRET_KEY must not use a default/weak value in staging/production"
+                )
 
             if self.PAYMENT_CALLBACK_SECRET in weak_secret_values:
-                raise ValueError("PAYMENT_CALLBACK_SECRET must not use a default/weak value in production")
+                raise ValueError(
+                    "PAYMENT_CALLBACK_SECRET must not use a default/weak value "
+                    "in staging/production"
+                )
 
             if "localhost" in self.DATABASE_URL or "127.0.0.1" in self.DATABASE_URL:
-                raise ValueError("DATABASE_URL should not point to localhost in production")
+                raise ValueError("DATABASE_URL should not point to localhost in staging/production")
 
-        if self.ENVIRONMENT == "test":
-            if self.DEBUG is False:
-                # test có thể để false hoặc true đều được, nhưng giữ mềm để không chặn CI
-                pass
+            if "localhost" in self.REDIS_URL or "127.0.0.1" in self.REDIS_URL:
+                raise ValueError("REDIS_URL should not point to localhost in staging/production")
+
+            if self.ALLOW_PAYMENT_SIMULATION:
+                raise ValueError("ALLOW_PAYMENT_SIMULATION must be false in staging/production")
 
         return self
 
@@ -154,10 +189,19 @@ class Settings(BaseSettings):
 
     @property
     def allowed_upload_extensions_list(self) -> list[str]:
-        return [item.strip().lower() for item in self.ALLOWED_UPLOAD_EXTENSIONS.split(",") if item.strip()]
+        return [
+            item.strip().lower()
+            for item in self.ALLOWED_UPLOAD_EXTENSIONS.split(",")
+            if item.strip()
+        ]
 
     @property
     def allowed_upload_mime_types_list(self) -> list[str]:
-        return [item.strip().lower() for item in self.ALLOWED_UPLOAD_MIME_TYPES.split(",") if item.strip()]
+        return [
+            item.strip().lower()
+            for item in self.ALLOWED_UPLOAD_MIME_TYPES.split(",")
+            if item.strip()
+        ]
+
 
 settings = Settings()

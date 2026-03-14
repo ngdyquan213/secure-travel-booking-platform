@@ -55,7 +55,9 @@ def seed_user(db_session):
     return user
 
 
-def seed_payment_and_refund(db_session, *, user_id, order_ref: str, refund_status: RefundStatus, amount: str):
+def seed_payment_and_refund(
+    db_session, *, user_id, order_ref: str, refund_status: RefundStatus, amount: str
+):
     payment = Payment(
         booking_id=None,
         initiated_by=user_id,
@@ -76,7 +78,9 @@ def seed_payment_and_refund(db_session, *, user_id, order_ref: str, refund_statu
         currency="VND",
         status=refund_status,
         reason=f"Reason {order_ref}",
-        processed_at=datetime.now(timezone.utc) if refund_status == RefundStatus.processed else None,
+        processed_at=datetime.now(timezone.utc)
+        if refund_status == RefundStatus.processed
+        else None,
     )
     db_session.add(refund)
     db_session.commit()

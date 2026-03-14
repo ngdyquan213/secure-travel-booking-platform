@@ -39,9 +39,13 @@ class PaymentRepository:
         )
 
     def get_by_gateway_order_ref(self, gateway_order_ref: str) -> Payment | None:
+        return self.db.query(Payment).filter(Payment.gateway_order_ref == gateway_order_ref).first()
+
+    def get_by_gateway_order_ref_for_update(self, gateway_order_ref: str) -> Payment | None:
         return (
             self.db.query(Payment)
             .filter(Payment.gateway_order_ref == gateway_order_ref)
+            .with_for_update()
             .first()
         )
 
@@ -55,10 +59,18 @@ class PaymentRepository:
         self.db.flush()
         return callback
 
-    def get_callback_by_gateway_txn_ref(self, gateway_transaction_ref: str) -> PaymentCallback | None:
+    def get_callback_by_gateway_txn_ref(
+        self,
+        *,
+        gateway_name: str,
+        gateway_transaction_ref: str,
+    ) -> PaymentCallback | None:
         return (
             self.db.query(PaymentCallback)
-            .filter(PaymentCallback.callback_payload["gateway_transaction_ref"].astext == gateway_transaction_ref)
+            .filter(
+                PaymentCallback.gateway_name == gateway_name,
+                PaymentCallback.gateway_transaction_ref == gateway_transaction_ref,
+            )
             .first()
         )
 

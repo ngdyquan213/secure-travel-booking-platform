@@ -9,6 +9,36 @@ on:
 jobs:
   test-lint-security:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: secure_travel_booking
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d secure_travel_booking"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_ADMIN_DB: secure_travel_booking
+      REDIS_URL: redis://localhost:6379/0
 
     steps:
       - name: Checkout source
@@ -27,8 +57,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
-          pip install pytest ruff bandit pip-audit
+          pip install -e ".[dev]"
 
       - name: Run Ruff
         run: |
@@ -45,3 +74,31 @@ jobs:
       - name: Run pytest
         run: |
           pytest -q
+
+  staging-compose-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Prepare staging env file
+        run: |
+          cp .env.staging.example .env.staging
+
+      - name: Boot staging stack
+        run: |
+          docker compose --env-file .env.staging -f infra/docker/docker-compose.staging.yml up -d --build
+
+      - name: Smoke test staging stack
+        run: |
+          python scripts/smoke_local_stack.py --base-url http://localhost:8080 --expected-environment staging
+
+      - name: Tear down staging stack
+        if: always()
+        run: |
+          docker compose --env-file .env.staging -f infra/docker/docker-compose.staging.yml down -v

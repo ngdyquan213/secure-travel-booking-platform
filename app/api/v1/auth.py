@@ -1,10 +1,8 @@
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import build_auth_service, get_current_user
 from app.core.database import get_db
-from app.repositories.audit_repository import AuditRepository
-from app.repositories.user_repository import UserRepository
 from app.schemas.auth import (
     LoginRequest,
     LogoutRequest,
@@ -14,17 +12,12 @@ from app.schemas.auth import (
     TokenResponse,
     UserMeResponse,
 )
-from app.services.audit_service import AuditService
-from app.services.auth_service import AuthService
+from app.utils.enums import enum_to_str
+from app.utils.request_context import get_client_ip, get_user_agent
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+TOKEN_TYPE_BEARER = "bearer"  # nosec B105
 
-def build_auth_service(db: Session) -> AuthService:
-    return AuthService(
-        db=db,
-        user_repo=UserRepository(db),
-        audit_service=AuditService(AuditRepository(db)),
-    )
 
 @router.post("/register", response_model=UserMeResponse, status_code=status.HTTP_201_CREATED)
 def register(
@@ -36,8 +29,8 @@ def register(
 
     user = service.register(
         payload=payload,
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
     )
 
     return UserMeResponse(
@@ -45,7 +38,7 @@ def register(
         email=user.email,
         username=user.username,
         full_name=user.full_name,
-        status=user.status.value if hasattr(user.status, "value") else str(user.status),
+        status=enum_to_str(user.status),
         email_verified=user.email_verified,
         created_at=user.created_at,
     )
@@ -61,14 +54,14 @@ def login(
 
     _, access_token, refresh_token = service.login(
         payload=payload,
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
     )
 
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        token_type="bearer",
+        token_type=TOKEN_TYPE_BEARER,
     )
 
 
@@ -82,14 +75,14 @@ def refresh_access_token(
 
     _, access_token, new_refresh_token = service.refresh_access_token(
         refresh_token=payload.refresh_token,
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
     )
 
     return TokenResponse(
         access_token=access_token,
         refresh_token=new_refresh_token,
-        token_type="bearer",
+        token_type=TOKEN_TYPE_BEARER,
     )
 
 
@@ -103,8 +96,8 @@ def logout(
 
     service.logout(
         refresh_token=payload.refresh_token,
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
     )
 
     return MessageResponse(message="Logged out successfully")
@@ -120,8 +113,8 @@ def logout_all(
 
     service.logout_all(
         user_id=str(current_user.id),
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
     )
 
     return MessageResponse(message="Logged out from all sessions successfully")

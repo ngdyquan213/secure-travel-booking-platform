@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.models.audit import AuditLog
 from app.models.booking import Booking
-from app.models.enums import BookingStatus
+from app.models.enums import BookingStatus, PaymentStatus, RefundStatus
 from app.models.payment import Payment
 from app.models.refund import Refund
 
@@ -16,8 +16,8 @@ class AdminRepository:
         self,
         skip: int = 0,
         limit: int = 50,
-        status: str | None = None,
-        payment_status: str | None = None,
+        status: BookingStatus | None = None,
+        payment_status: PaymentStatus | None = None,
         booking_code: str | None = None,
         sort_by: str = "booked_at",
         sort_order: str = "desc",
@@ -45,8 +45,8 @@ class AdminRepository:
 
     def count_bookings(
         self,
-        status: str | None = None,
-        payment_status: str | None = None,
+        status: BookingStatus | None = None,
+        payment_status: PaymentStatus | None = None,
         booking_code: str | None = None,
     ) -> int:
         query = self.db.query(Booking)
@@ -73,11 +73,7 @@ class AdminRepository:
         )
 
     def count_cancelled_bookings(self) -> int:
-        return (
-            self.db.query(Booking)
-            .filter(Booking.status == BookingStatus.cancelled)
-            .count()
-        )
+        return self.db.query(Booking).filter(Booking.status == BookingStatus.cancelled).count()
 
     def list_payments(self, skip: int = 0, limit: int = 50) -> list[Payment]:
         return (
@@ -95,7 +91,7 @@ class AdminRepository:
         self,
         skip: int = 0,
         limit: int = 50,
-        status: str | None = None,
+        status: RefundStatus | None = None,
         payment_id: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
@@ -120,7 +116,7 @@ class AdminRepository:
 
     def count_refunds(
         self,
-        status: str | None = None,
+        status: RefundStatus | None = None,
         payment_id: str | None = None,
     ) -> int:
         query = self.db.query(Refund)

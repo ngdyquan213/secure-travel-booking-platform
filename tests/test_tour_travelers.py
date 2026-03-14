@@ -1,9 +1,29 @@
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
+from uuid import uuid4
 
+from sqlalchemy.orm import sessionmaker
+
+from app.core.exceptions import ValidationAppException
 from app.core.security import get_password_hash
-from app.models.enums import TourScheduleStatus, TourStatus, TravelerType, UserStatus
+from app.models.booking import Booking, BookingItem, Traveler
+from app.models.enums import (
+    BookingItemType,
+    BookingStatus,
+    PaymentStatus,
+    TourScheduleStatus,
+    TourStatus,
+    TravelerType,
+    UserStatus,
+)
 from app.models.tour import Tour, TourPriceRule, TourSchedule
 from app.models.user import User
+from app.repositories.audit_repository import AuditRepository
+from app.repositories.booking_repository import BookingRepository
+from app.schemas.traveler import TravelerCreateRequest
+from app.services.audit_service import AuditService
+from app.services.traveler_service import TravelerService
 
 
 def create_user_and_login(client, db_session, email: str, username: str):
@@ -158,3 +178,135 @@ def test_cannot_exceed_traveler_type_limit(client, db_session):
     )
     assert add2.status_code == 400
     assert add2.json()["detail"] == "Traveler count exceeded for type: adult"
+
+
+def test_traveler_limit_is_enforced_under_concurrency(db_engine):
+    SessionLocal = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+    suffix = uuid4().hex[:8]
+
+    seed_session = SessionLocal()
+    user = User(
+        email=f"traveler-race-{suffix}@example.com",
+        username=f"traveler_race_{suffix}",
+        full_name="Traveler Race",
+        password_hash=get_password_hash("Password123"),
+        status=UserStatus.active,
+        email_verified=True,
+        phone_verified=False,
+        failed_login_count=0,
+    )
+    seed_session.add(user)
+    seed_session.flush()
+
+    tour = Tour(
+        code=f"TRAVELER-RACE-{suffix.upper()}",
+        name="Traveler Race Tour",
+        destination="Phu Quoc",
+        description="Traveler race test tour",
+        duration_days=3,
+        duration_nights=2,
+        meeting_point="Airport",
+        tour_type="domestic",
+        status=TourStatus.active,
+    )
+    seed_session.add(tour)
+    seed_session.flush()
+
+    schedule = TourSchedule(
+        tour_id=tour.id,
+        departure_date=date.today() + timedelta(days=7),
+        return_date=date.today() + timedelta(days=9),
+        capacity=10,
+        available_slots=10,
+        status=TourScheduleStatus.scheduled,
+    )
+    seed_session.add(schedule)
+    seed_session.flush()
+    seed_session.add_all(
+        [
+            TourPriceRule(
+                tour_schedule_id=schedule.id,
+                traveler_type=TravelerType.adult,
+                price="3000000.00",
+                currency="VND",
+            ),
+            TourPriceRule(
+                tour_schedule_id=schedule.id,
+                traveler_type=TravelerType.child,
+                price="2000000.00",
+                currency="VND",
+            ),
+        ]
+    )
+
+    booking = Booking(
+        booking_code=f"TB-{suffix.upper()}",
+        user_id=user.id,
+        status=BookingStatus.pending,
+        total_base_amount="3000000.00",
+        total_discount_amount="0.00",
+        total_final_amount="3000000.00",
+        currency="VND",
+        payment_status=PaymentStatus.pending,
+    )
+    seed_session.add(booking)
+    seed_session.flush()
+    seed_session.add(
+        BookingItem(
+            booking_id=booking.id,
+            item_type=BookingItemType.tour,
+            tour_schedule_id=schedule.id,
+            quantity=1,
+            unit_price="3000000.00",
+            total_price="3000000.00",
+            metadata_json={"adult_count": 1, "child_count": 0, "infant_count": 0},
+        )
+    )
+    seed_session.commit()
+
+    booking_id = str(booking.id)
+    user_id = str(user.id)
+    seed_session.close()
+
+    def add_once(index: int) -> tuple[str, str]:
+        session = SessionLocal()
+        service = TravelerService(
+            db=session,
+            booking_repo=BookingRepository(session),
+            audit_service=AuditService(AuditRepository(session)),
+        )
+
+        try:
+            service.add_traveler(
+                booking_id=booking_id,
+                user_id=user_id,
+                payload=TravelerCreateRequest(
+                    full_name=f"Adult {index}",
+                    traveler_type=TravelerType.adult,
+                ),
+            )
+            return "success", str(index)
+        except ValidationAppException as exc:
+            return "error", str(exc)
+        finally:
+            session.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(add_once, [1, 2]))
+
+    statuses = Counter(status for status, _value in results)
+    assert statuses["success"] == 1
+    assert statuses["error"] == 1
+    assert any(
+        value == "Traveler count exceeded for type: adult"
+        for status, value in results
+        if status == "error"
+    )
+
+    verify_session = SessionLocal()
+    traveler_count = (
+        verify_session.query(Traveler).filter(Traveler.booking_id == booking_id).count()
+    )
+    verify_session.close()
+
+    assert traveler_count == 1

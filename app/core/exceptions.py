@@ -20,7 +20,9 @@ class AppException(Exception):
 
 
 class ValidationAppException(AppException):
-    def __init__(self, message: str = "Validation failed", detail: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, message: str = "Validation failed", detail: dict[str, Any] | None = None
+    ) -> None:
         super().__init__(
             error_code="VALIDATION_ERROR",
             message=message,
@@ -30,7 +32,9 @@ class ValidationAppException(AppException):
 
 
 class AuthenticationAppException(AppException):
-    def __init__(self, message: str = "Authentication failed", detail: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, message: str = "Authentication failed", detail: dict[str, Any] | None = None
+    ) -> None:
         super().__init__(
             error_code="AUTHENTICATION_ERROR",
             message=message,
@@ -40,7 +44,9 @@ class AuthenticationAppException(AppException):
 
 
 class AuthorizationAppException(AppException):
-    def __init__(self, message: str = "Access denied", detail: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, message: str = "Access denied", detail: dict[str, Any] | None = None
+    ) -> None:
         super().__init__(
             error_code="AUTHORIZATION_ERROR",
             message=message,
@@ -50,7 +56,9 @@ class AuthorizationAppException(AppException):
 
 
 class NotFoundAppException(AppException):
-    def __init__(self, message: str = "Resource not found", detail: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, message: str = "Resource not found", detail: dict[str, Any] | None = None
+    ) -> None:
         super().__init__(
             error_code="NOT_FOUND",
             message=message,
@@ -60,7 +68,9 @@ class NotFoundAppException(AppException):
 
 
 class ConflictAppException(AppException):
-    def __init__(self, message: str = "Conflict detected", detail: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, message: str = "Conflict detected", detail: dict[str, Any] | None = None
+    ) -> None:
         super().__init__(
             error_code="CONFLICT",
             message=message,
@@ -70,7 +80,9 @@ class ConflictAppException(AppException):
 
 
 class RateLimitAppException(AppException):
-    def __init__(self, message: str = "Rate limit exceeded", detail: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, message: str = "Rate limit exceeded", detail: dict[str, Any] | None = None
+    ) -> None:
         super().__init__(
             error_code="RATE_LIMIT_EXCEEDED",
             message=message,
@@ -80,7 +92,9 @@ class RateLimitAppException(AppException):
 
 
 class ExternalServiceAppException(AppException):
-    def __init__(self, message: str = "External service error", detail: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, message: str = "External service error", detail: dict[str, Any] | None = None
+    ) -> None:
         super().__init__(
             error_code="EXTERNAL_SERVICE_ERROR",
             message=message,

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 
@@ -83,10 +81,18 @@ def test_run_startup_checks_runs_all(monkeypatch):
         "redis": False,
     }
 
-    monkeypatch.setattr(startup_module, "log_startup_summary", lambda: called.__setitem__("summary", True))
-    monkeypatch.setattr(startup_module, "ensure_local_directories", lambda: called.__setitem__("dirs", True))
-    monkeypatch.setattr(startup_module, "check_database_connection", lambda: called.__setitem__("db", True))
-    monkeypatch.setattr(startup_module, "check_redis_connection", lambda: called.__setitem__("redis", True))
+    monkeypatch.setattr(
+        startup_module, "log_startup_summary", lambda: called.__setitem__("summary", True)
+    )
+    monkeypatch.setattr(
+        startup_module, "ensure_local_directories", lambda: called.__setitem__("dirs", True)
+    )
+    monkeypatch.setattr(
+        startup_module, "check_database_connection", lambda: called.__setitem__("db", True)
+    )
+    monkeypatch.setattr(
+        startup_module, "check_redis_connection", lambda: called.__setitem__("redis", True)
+    )
 
     startup_module.run_startup_checks()
 

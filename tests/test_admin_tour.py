@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
 from app.core.security import get_password_hash
-from app.models.enums import TourScheduleStatus, TourStatus, UserStatus
+from app.models.enums import TourStatus, UserStatus
 from app.models.role import Role, UserRole
 from app.models.tour import Tour
 from app.models.user import User
@@ -101,6 +101,11 @@ def test_admin_can_create_tour(client, db_session):
     assert body["code"] == "HN-HL-3N2D"
     assert body["status"] == "active"
 
+    db_session.expire_all()
+    saved_tour = db_session.query(Tour).filter(Tour.code == "HN-HL-3N2D").first()
+    assert saved_tour is not None
+    assert saved_tour.destination == "Ha Long"
+
 
 def test_admin_can_update_tour(client, db_session):
     _, admin_token = create_admin_and_login(client, db_session)
@@ -159,6 +164,10 @@ def test_admin_can_create_schedule(client, db_session):
     assert body["tour_id"] == str(tour.id)
     assert body["capacity"] == 20
     assert body["status"] == "scheduled"
+
+    db_session.expire_all()
+    saved_schedule = db_session.query(Tour).filter(Tour.id == tour.id).first().schedules[0]
+    assert saved_schedule.available_slots == 20
 
 
 def test_admin_can_update_schedule(client, db_session):

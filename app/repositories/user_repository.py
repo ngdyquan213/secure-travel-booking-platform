@@ -1,7 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
-from app.models.user import RefreshToken, User
+from app.models.user import LoginAttempt, RefreshToken, User
 
 
 class UserRepository:
@@ -38,14 +39,27 @@ class UserRepository:
         self.db.flush()
         return refresh_token
 
+    def add_login_attempt(self, login_attempt: LoginAttempt) -> LoginAttempt:
+        self.db.add(login_attempt)
+        self.db.flush()
+        return login_attempt
+
     def get_refresh_token_by_hash(self, token_hash: str) -> RefreshToken | None:
+        return self.db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
+
+    def get_refresh_token_by_hash_for_update(self, token_hash: str) -> RefreshToken | None:
         return (
             self.db.query(RefreshToken)
             .filter(RefreshToken.token_hash == token_hash)
+            .with_for_update()
             .first()
         )
 
-    def revoke_refresh_token(self, refresh_token: RefreshToken, revoked_at: datetime) -> RefreshToken:
+    def revoke_refresh_token(
+        self,
+        refresh_token: RefreshToken,
+        revoked_at: datetime,
+    ) -> RefreshToken:
         refresh_token.revoked_at = revoked_at
         self.db.add(refresh_token)
         self.db.flush()
@@ -69,11 +83,7 @@ class UserRepository:
         return len(tokens)
 
     def delete_expired_refresh_tokens(self, now: datetime) -> int:
-        tokens = (
-            self.db.query(RefreshToken)
-            .filter(RefreshToken.expires_at < now)
-            .all()
-        )
+        tokens = self.db.query(RefreshToken).filter(RefreshToken.expires_at < now).all()
         count = len(tokens)
         for token in tokens:
             self.db.delete(token)

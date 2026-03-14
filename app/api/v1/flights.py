@@ -1,21 +1,18 @@
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_pagination_params
+from app.api.deps import build_flight_service, get_pagination_params
 from app.core.database import get_db
-from app.models.enums import LogActorType
-from app.repositories.audit_repository import AuditRepository
-from app.repositories.flight_repository import FlightRepository
 from app.schemas.common import PaginatedResponse
 from app.schemas.flight import FlightResponse
-from app.services.audit_service import AuditService
-from app.services.flight_service import FlightService
 from app.utils.pagination import PaginationParams, build_paginated_response
+from app.utils.request_context import get_client_ip, get_user_agent
+from app.utils.response_mappers import flight_to_dict
 
 router = APIRouter(prefix="/flights", tags=["flights"])
 
 
-@router.get("", response_model=PaginatedResponse)
+@router.get("", response_model=PaginatedResponse[FlightResponse])
 def list_flights(
     request: Request,
     pagination: PaginationParams = Depends(get_pagination_params),
@@ -26,11 +23,8 @@ def list_flights(
     sort_order: str = Query(default="asc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
 ):
-    repo = FlightRepository(db)
-    service = FlightService(repo)
-    audit_service = AuditService(AuditRepository(db))
-
-    flights = service.list_flights(
+    service = build_flight_service(db)
+    flights, total = service.list_flights(
         skip=pagination.offset,
         limit=pagination.limit,
         departure_airport_code=departure_airport_code,
@@ -38,47 +32,12 @@ def list_flights(
         status=status,
         sort_by=sort_by,
         sort_order=sort_order,
+        page=pagination.page,
+        page_size=pagination.page_size,
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
     )
-    total = repo.count_flights(
-        departure_airport_code=departure_airport_code,
-        arrival_airport_code=arrival_airport_code,
-        status=status,
-    )
-
-    items = [
-        FlightResponse(
-            id=str(f.id),
-            airline_id=str(f.airline_id),
-            flight_number=f.flight_number,
-            departure_airport_id=str(f.departure_airport_id),
-            arrival_airport_id=str(f.arrival_airport_id),
-            departure_time=f.departure_time,
-            arrival_time=f.arrival_time,
-            base_price=f.base_price,
-            available_seats=f.available_seats,
-            status=f.status,
-        ).model_dump()
-        for f in flights
-    ]
-
-    audit_service.log_action(
-        actor_type=LogActorType.system,
-        action="flights_list_viewed",
-        resource_type="flight",
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-        metadata={
-            "page": pagination.page,
-            "page_size": pagination.page_size,
-            "departure_airport_code": departure_airport_code,
-            "arrival_airport_code": arrival_airport_code,
-            "status": status,
-            "sort_by": sort_by,
-            "sort_order": sort_order,
-            "result_count": len(items),
-        },
-    )
-    db.commit()
+    items = [FlightResponse(**flight_to_dict(f)).model_dump(mode="json") for f in flights]
 
     return build_paginated_response(
         items=items,
@@ -93,20 +52,8 @@ def get_flight(
     flight_id: str,
     db: Session = Depends(get_db),
 ) -> FlightResponse:
-    repo = FlightRepository(db)
-    service = FlightService(repo)
+    service = build_flight_service(db)
 
     flight = service.get_flight(flight_id)
 
-    return FlightResponse(
-        id=str(flight.id),
-        airline_id=str(flight.airline_id),
-        flight_number=flight.flight_number,
-        departure_airport_id=str(flight.departure_airport_id),
-        arrival_airport_id=str(flight.arrival_airport_id),
-        departure_time=flight.departure_time,
-        arrival_time=flight.arrival_time,
-        base_price=flight.base_price,
-        available_seats=flight.available_seats,
-        status=flight.status,
-    )
+    return FlightResponse(**flight_to_dict(flight))

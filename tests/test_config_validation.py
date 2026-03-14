@@ -22,11 +22,31 @@ def test_settings_accept_valid_development_config():
         TRUSTED_HOSTS="localhost,127.0.0.1,testserver",
         ALLOWED_UPLOAD_EXTENSIONS=".pdf,.png,.jpg,.jpeg",
         ALLOWED_UPLOAD_MIME_TYPES="application/pdf,image/png,image/jpeg",
+        ALLOW_PAYMENT_SIMULATION=False,
     )
 
     assert settings.ENVIRONMENT == "development"
     assert settings.DEBUG is True
     assert settings.allowed_upload_extensions_list == [".pdf", ".png", ".jpg", ".jpeg"]
+
+
+def test_settings_build_database_url_from_postgres_fields_when_database_url_not_provided():
+    settings = Settings(
+        SECRET_KEY="this-is-a-very-strong-secret-key-123456",
+        PAYMENT_CALLBACK_SECRET="very-strong-payment-secret",
+        REDIS_URL="redis://localhost:6379/0",
+        POSTGRES_SERVER="postgres",
+        POSTGRES_PORT=5432,
+        POSTGRES_USER="postgres",
+        POSTGRES_PASSWORD="postgres",
+        POSTGRES_DB="secure_travel_booking",
+    )
+
+    assert (
+        settings.DATABASE_URL
+        == "postgresql+psycopg2://postgres:postgres@postgres:5432/secure_travel_booking"
+    )
+    assert settings.SQLALCHEMY_DATABASE_URI == settings.DATABASE_URL
 
 
 def test_settings_reject_short_secret_key():
@@ -70,7 +90,7 @@ def test_settings_reject_invalid_redis_url():
 
 
 def test_settings_reject_production_with_debug_true():
-    with pytest.raises(ValueError, match="DEBUG must be false in production"):
+    with pytest.raises(ValueError, match="DEBUG must be false in staging/production"):
         Settings(
             ENVIRONMENT="production",
             DEBUG=True,
@@ -82,7 +102,10 @@ def test_settings_reject_production_with_debug_true():
 
 
 def test_settings_reject_production_with_weak_secret():
-    with pytest.raises(ValueError, match="SECRET_KEY must not use a default/weak value in production"):
+    with pytest.raises(
+        ValueError,
+        match="SECRET_KEY must not use a default/weak value in staging/production",
+    ):
         Settings(
             ENVIRONMENT="production",
             DEBUG=False,
@@ -94,7 +117,10 @@ def test_settings_reject_production_with_weak_secret():
 
 
 def test_settings_reject_production_localhost_database():
-    with pytest.raises(ValueError, match="DATABASE_URL should not point to localhost in production"):
+    with pytest.raises(
+        ValueError,
+        match="DATABASE_URL should not point to localhost in staging/production",
+    ):
         Settings(
             ENVIRONMENT="production",
             DEBUG=False,
@@ -102,4 +128,52 @@ def test_settings_reject_production_localhost_database():
             PAYMENT_CALLBACK_SECRET="very-strong-payment-secret",
             DATABASE_URL="postgresql+psycopg2://postgres:postgres@localhost:5432/secure_travel_booking",
             REDIS_URL="redis://redis:6379/0",
+        )
+
+
+def test_settings_reject_production_payment_simulation():
+    with pytest.raises(
+        ValueError,
+        match="ALLOW_PAYMENT_SIMULATION must be false in staging/production",
+    ):
+        Settings(
+            ENVIRONMENT="production",
+            DEBUG=False,
+            SECRET_KEY="this-is-a-very-strong-secret-key-123456",
+            PAYMENT_CALLBACK_SECRET="very-strong-payment-secret",
+            DATABASE_URL="postgresql+psycopg2://db-user:db-pass@db:5432/secure_travel_booking",
+            REDIS_URL="redis://redis:6379/0",
+            ALLOW_PAYMENT_SIMULATION=True,
+        )
+
+
+def test_settings_accept_valid_staging_config():
+    settings = Settings(
+        ENVIRONMENT="staging",
+        DEBUG=False,
+        SECRET_KEY="staging-secret-key-12345678901234567890",
+        PAYMENT_CALLBACK_SECRET="staging-payment-secret-123456",
+        DATABASE_URL="postgresql+psycopg2://db-user:db-pass@postgres:5432/secure_travel_booking",
+        REDIS_URL="redis://redis:6379/0",
+        ALLOW_PAYMENT_SIMULATION=False,
+        CORS_ORIGINS="https://staging.example.com",
+        TRUSTED_HOSTS="staging.example.com",
+    )
+
+    assert settings.ENVIRONMENT == "staging"
+    assert settings.DEBUG is False
+
+
+def test_settings_reject_staging_localhost_redis():
+    with pytest.raises(
+        ValueError, match="REDIS_URL should not point to localhost in staging/production"
+    ):
+        Settings(
+            ENVIRONMENT="staging",
+            DEBUG=False,
+            SECRET_KEY="staging-secret-key-12345678901234567890",
+            PAYMENT_CALLBACK_SECRET="staging-payment-secret-123456",
+            DATABASE_URL="postgresql+psycopg2://db-user:db-pass@postgres:5432/secure_travel_booking",
+            REDIS_URL="redis://localhost:6379/0",
+            ALLOW_PAYMENT_SIMULATION=False,
         )

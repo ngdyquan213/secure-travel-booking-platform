@@ -18,7 +18,9 @@ from app.models.role import Role, UserRole
 from app.models.user import User
 
 
-def create_user_and_login(client, db_session, *, email: str, username: str, password: str = "Password123"):
+def create_user_and_login(
+    client, db_session, *, email: str, username: str, password: str = "Password123"
+):
     user = User(
         email=email,
         username=username,

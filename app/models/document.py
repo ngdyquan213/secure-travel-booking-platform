@@ -4,7 +4,18 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,7 +53,7 @@ class UploadedDocument(Base):
     )
 
     document_type: Mapped[DocumentType] = mapped_column(
-        Enum(DocumentType, name="document_type"),
+        Enum(DocumentType, name="document_type", native_enum=False),
         nullable=False,
     )
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -62,4 +73,6 @@ class UploadedDocument(Base):
 
     user: Mapped[User] = relationship("User", back_populates="uploaded_documents")
     booking: Mapped[Booking | None] = relationship("Booking", back_populates="uploaded_documents")
-    traveler: Mapped[Traveler | None] = relationship("Traveler", back_populates="uploaded_documents")
+    traveler: Mapped[Traveler | None] = relationship(
+        "Traveler", back_populates="uploaded_documents"
+    )

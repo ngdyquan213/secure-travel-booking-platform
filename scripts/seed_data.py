@@ -4,10 +4,10 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
+from app.models.enums import TourScheduleStatus, TourStatus, TravelerType
 from app.models.flight import Airline, Airport, Flight
 from app.models.hotel import Hotel, HotelRoom
 from app.models.tour import Tour, TourItinerary, TourPolicy, TourPriceRule, TourSchedule
-from app.models.enums import TourScheduleStatus, TourStatus, TravelerType
 
 
 def seed_airlines(db: Session) -> dict[str, Airline]:
@@ -29,9 +29,24 @@ def seed_airlines(db: Session) -> dict[str, Airline]:
 
 def seed_airports(db: Session) -> dict[str, Airport]:
     data = [
-        {"code": "SGN", "name": "Tan Son Nhat International Airport", "city": "Ho Chi Minh City", "country": "Vietnam"},
-        {"code": "HAN", "name": "Noi Bai International Airport", "city": "Ha Noi", "country": "Vietnam"},
-        {"code": "DAD", "name": "Da Nang International Airport", "city": "Da Nang", "country": "Vietnam"},
+        {
+            "code": "SGN",
+            "name": "Tan Son Nhat International Airport",
+            "city": "Ho Chi Minh City",
+            "country": "Vietnam",
+        },
+        {
+            "code": "HAN",
+            "name": "Noi Bai International Airport",
+            "city": "Ha Noi",
+            "country": "Vietnam",
+        },
+        {
+            "code": "DAD",
+            "name": "Da Nang International Airport",
+            "city": "Da Nang",
+            "country": "Vietnam",
+        },
     ]
     result: dict[str, Airport] = {}
     for item in data:
@@ -100,7 +115,12 @@ def seed_flights(db: Session, airlines: dict[str, Airline], airports: dict[str, 
 
 def seed_hotels(db: Session) -> dict[str, Hotel]:
     data = [
-        {"name": "Liberty Central Saigon", "city": "Ho Chi Minh City", "country": "Vietnam", "star_rating": 4},
+        {
+            "name": "Liberty Central Saigon",
+            "city": "Ho Chi Minh City",
+            "country": "Vietnam",
+            "star_rating": 4,
+        },
         {"name": "Melia Hanoi", "city": "Ha Noi", "country": "Vietnam", "star_rating": 5},
     ]
 
@@ -123,8 +143,20 @@ def seed_hotels(db: Session) -> dict[str, Hotel]:
 
 def seed_hotel_rooms(db: Session, hotels: dict[str, Hotel]) -> None:
     data = [
-        {"hotel_name": "Liberty Central Saigon", "room_type": "Deluxe", "capacity": 2, "price": Decimal("1200000.00"), "total_rooms": 20},
-        {"hotel_name": "Melia Hanoi", "room_type": "Premium", "capacity": 2, "price": Decimal("2500000.00"), "total_rooms": 15},
+        {
+            "hotel_name": "Liberty Central Saigon",
+            "room_type": "Deluxe",
+            "capacity": 2,
+            "price": Decimal("1200000.00"),
+            "total_rooms": 20,
+        },
+        {
+            "hotel_name": "Melia Hanoi",
+            "room_type": "Premium",
+            "capacity": 2,
+            "price": Decimal("2500000.00"),
+            "total_rooms": 15,
+        },
     ]
 
     for item in data:
@@ -195,9 +227,24 @@ def seed_tour_details(db: Session, tours: dict[str, Tour]) -> None:
     if not db.query(TourItinerary).filter(TourItinerary.tour_id == pq.id).first():
         db.add_all(
             [
-                TourItinerary(tour_id=pq.id, day_number=1, title="Arrival and check-in", description="Airport transfer and hotel check-in."),
-                TourItinerary(tour_id=pq.id, day_number=2, title="Island hopping", description="Boat trip and snorkeling."),
-                TourItinerary(tour_id=pq.id, day_number=3, title="Free time and departure", description="Shopping and transfer."),
+                TourItinerary(
+                    tour_id=pq.id,
+                    day_number=1,
+                    title="Arrival and check-in",
+                    description="Airport transfer and hotel check-in.",
+                ),
+                TourItinerary(
+                    tour_id=pq.id,
+                    day_number=2,
+                    title="Island hopping",
+                    description="Boat trip and snorkeling.",
+                ),
+                TourItinerary(
+                    tour_id=pq.id,
+                    day_number=3,
+                    title="Free time and departure",
+                    description="Shopping and transfer.",
+                ),
             ]
         )
 
@@ -214,10 +261,30 @@ def seed_tour_details(db: Session, tours: dict[str, Tour]) -> None:
     if not db.query(TourItinerary).filter(TourItinerary.tour_id == dl.id).first():
         db.add_all(
             [
-                TourItinerary(tour_id=dl.id, day_number=1, title="City arrival", description="Travel and evening market."),
-                TourItinerary(tour_id=dl.id, day_number=2, title="Nature sightseeing", description="Pine forest and lake visits."),
-                TourItinerary(tour_id=dl.id, day_number=3, title="Adventure day", description="Waterfall and mountain activities."),
-                TourItinerary(tour_id=dl.id, day_number=4, title="Return", description="Breakfast and return transfer."),
+                TourItinerary(
+                    tour_id=dl.id,
+                    day_number=1,
+                    title="City arrival",
+                    description="Travel and evening market.",
+                ),
+                TourItinerary(
+                    tour_id=dl.id,
+                    day_number=2,
+                    title="Nature sightseeing",
+                    description="Pine forest and lake visits.",
+                ),
+                TourItinerary(
+                    tour_id=dl.id,
+                    day_number=3,
+                    title="Adventure day",
+                    description="Waterfall and mountain activities.",
+                ),
+                TourItinerary(
+                    tour_id=dl.id,
+                    day_number=4,
+                    title="Return",
+                    description="Breakfast and return transfer.",
+                ),
             ]
         )
 
@@ -289,12 +356,36 @@ def seed_tour_schedules(db: Session, tours: dict[str, Tour]) -> dict[str, TourSc
 
 def seed_tour_price_rules(db: Session, schedules: dict[str, TourSchedule]) -> None:
     data = [
-        {"schedule_key": "PQ-S1", "traveler_type": TravelerType.adult, "price": Decimal("3490000.00")},
-        {"schedule_key": "PQ-S1", "traveler_type": TravelerType.child, "price": Decimal("2490000.00")},
-        {"schedule_key": "PQ-S1", "traveler_type": TravelerType.infant, "price": Decimal("500000.00")},
-        {"schedule_key": "DL-S1", "traveler_type": TravelerType.adult, "price": Decimal("2890000.00")},
-        {"schedule_key": "DL-S1", "traveler_type": TravelerType.child, "price": Decimal("1990000.00")},
-        {"schedule_key": "DL-S1", "traveler_type": TravelerType.infant, "price": Decimal("400000.00")},
+        {
+            "schedule_key": "PQ-S1",
+            "traveler_type": TravelerType.adult,
+            "price": Decimal("3490000.00"),
+        },
+        {
+            "schedule_key": "PQ-S1",
+            "traveler_type": TravelerType.child,
+            "price": Decimal("2490000.00"),
+        },
+        {
+            "schedule_key": "PQ-S1",
+            "traveler_type": TravelerType.infant,
+            "price": Decimal("500000.00"),
+        },
+        {
+            "schedule_key": "DL-S1",
+            "traveler_type": TravelerType.adult,
+            "price": Decimal("2890000.00"),
+        },
+        {
+            "schedule_key": "DL-S1",
+            "traveler_type": TravelerType.child,
+            "price": Decimal("1990000.00"),
+        },
+        {
+            "schedule_key": "DL-S1",
+            "traveler_type": TravelerType.infant,
+            "price": Decimal("400000.00"),
+        },
     ]
 
     for item in data:

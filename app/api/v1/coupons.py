@@ -1,14 +1,12 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import build_coupon_service, get_current_user
 from app.core.database import get_db
-from app.repositories.audit_repository import AuditRepository
-from app.repositories.booking_repository import BookingRepository
-from app.repositories.coupon_repository import CouponRepository
+from app.core.exceptions import AppException
 from app.schemas.coupon import CouponApplyRequest, CouponApplyResponse
-from app.services.audit_service import AuditService
-from app.services.coupon_service import CouponService
+from app.utils.enums import enum_to_str
+from app.utils.request_context import get_client_ip, get_user_agent
 
 router = APIRouter(prefix="/coupons", tags=["coupons"])
 
@@ -20,20 +18,19 @@ def apply_coupon(
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CouponApplyResponse:
-    audit_service = AuditService(AuditRepository(db))
-    service = CouponService(
-        db=db,
-        booking_repo=BookingRepository(db),
-        coupon_repo=CouponRepository(db),
-        audit_service=audit_service,
-    )
+    service = build_coupon_service(db)
 
-    booking, coupon = service.apply_coupon(
-        user_id=str(current_user.id),
-        payload=payload,
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-    )
+    try:
+        booking, coupon = service.apply_coupon(
+            user_id=str(current_user.id),
+            payload=payload,
+            ip_address=get_client_ip(request),
+            user_agent=get_user_agent(request),
+        )
+    except AppException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
     return CouponApplyResponse(
         booking_id=str(booking.id),
@@ -41,11 +38,7 @@ def apply_coupon(
         coupon_id=str(coupon.id),
         coupon_code=coupon.code,
         coupon_name=coupon.name,
-        applicable_product_type=(
-            coupon.applicable_product_type.value
-            if hasattr(coupon.applicable_product_type, "value")
-            else str(coupon.applicable_product_type)
-        ),
+        applicable_product_type=enum_to_str(coupon.applicable_product_type),
         total_base_amount=booking.total_base_amount,
         total_discount_amount=booking.total_discount_amount,
         total_final_amount=booking.total_final_amount,

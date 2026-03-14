@@ -6,7 +6,6 @@ from app.models.booking import Booking, BookingItem
 from app.models.enums import (
     BookingItemType,
     BookingStatus,
-    PaymentMethod,
     PaymentStatus,
     UserStatus,
 )
@@ -14,7 +13,9 @@ from app.models.flight import Airline, Airport, Flight
 from app.models.user import User
 
 
-def create_user_and_login(client, db_session, *, email: str, username: str, password: str = "Password123"):
+def create_user_and_login(
+    client, db_session, *, email: str, username: str, password: str = "Password123"
+):
     user = User(
         email=email,
         username=username,
@@ -37,7 +38,9 @@ def create_user_and_login(client, db_session, *, email: str, username: str, pass
     return user, token
 
 
-def seed_flight_booking(db_session, user_id: str, *, booking_code: str, amount: Decimal = Decimal("1000000.00")):
+def seed_flight_booking(
+    db_session, user_id: str, *, booking_code: str, amount: Decimal = Decimal("1000000.00")
+):
     airline = Airline(code=f"AL{booking_code[-2:]}", name=f"Airline {booking_code}")
     dep = Airport(code=f"D{booking_code[-2:]}", name="Departure", city="HCM", country="VN")
     arr = Airport(code=f"A{booking_code[-2:]}", name="Arrival", city="HN", country="VN")

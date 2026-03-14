@@ -12,6 +12,7 @@ from app.repositories.booking_repository import BookingRepository
 from app.repositories.coupon_repository import CouponRepository
 from app.schemas.coupon import CouponApplyRequest
 from app.services.audit_service import AuditService
+from app.utils.enums import enum_to_str
 
 
 class CouponService:
@@ -31,10 +32,7 @@ class CouponService:
         if not booking.items:
             raise ValidationAppException("Booking has no items")
 
-        item_types = {
-            item.item_type.value if hasattr(item.item_type, "value") else str(item.item_type)
-            for item in booking.items
-        }
+        item_types = {enum_to_str(item.item_type) for item in booking.items}
 
         if len(item_types) != 1:
             raise ValidationAppException("Coupon can only be applied to single-product bookings")
@@ -67,11 +65,7 @@ class CouponService:
             raise ConflictAppException("Booking already has a coupon applied")
 
         product_type = self._resolve_booking_product_type(booking)
-        applicable = (
-            coupon.applicable_product_type.value
-            if hasattr(coupon.applicable_product_type, "value")
-            else str(coupon.applicable_product_type)
-        )
+        applicable = enum_to_str(coupon.applicable_product_type)
         if applicable != product_type.value:
             raise ValidationAppException("Coupon is not applicable to this booking type")
 
@@ -82,7 +76,10 @@ class CouponService:
             raise ValidationAppException("Coupon usage limit reached")
 
         user_usage_count = self.coupon_repo.count_usage_by_user(str(coupon.id), user_id)
-        if coupon.usage_limit_per_user is not None and user_usage_count >= coupon.usage_limit_per_user:
+        if (
+            coupon.usage_limit_per_user is not None
+            and user_usage_count >= coupon.usage_limit_per_user
+        ):
             raise ValidationAppException("Coupon usage limit per user reached")
 
         existing_usage = self.coupon_repo.get_usage_by_booking(str(coupon.id), str(booking.id))
@@ -90,12 +87,14 @@ class CouponService:
             raise ConflictAppException("Coupon already used for this booking")
 
     def _calculate_discount_amount(self, *, coupon, booking) -> Decimal:
-        coupon_type = coupon.coupon_type.value if hasattr(coupon.coupon_type, "value") else str(coupon.coupon_type)
+        coupon_type = enum_to_str(coupon.coupon_type)
 
         if coupon_type == CouponType.fixed_amount.value:
             discount = Decimal(coupon.discount_value)
         elif coupon_type == CouponType.percentage.value:
-            discount = (Decimal(booking.total_base_amount) * Decimal(coupon.discount_value)) / Decimal("100")
+            discount = (
+                Decimal(booking.total_base_amount) * Decimal(coupon.discount_value)
+            ) / Decimal("100")
         else:
             raise ValidationAppException("Unsupported coupon type")
 
@@ -118,14 +117,17 @@ class CouponService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ):
-        booking = self.booking_repo.get_by_id_and_user_id(payload.booking_id, user_id)
-        if not booking:
-            raise ValidationAppException("Booking not found")
+        with self.db.begin_nested():
+            booking = self.booking_repo.get_by_id_and_user_id_for_update(
+                payload.booking_id,
+                user_id,
+            )
+            if not booking:
+                raise ValidationAppException("Booking not found")
 
-        coupon = self.coupon_repo.get_by_code(payload.coupon_code)
-        self._validate_coupon(coupon=coupon, booking=booking, user_id=user_id)
+            coupon = self.coupon_repo.get_by_code_for_update(payload.coupon_code)
+            self._validate_coupon(coupon=coupon, booking=booking, user_id=user_id)
 
-        with self.db.begin():
             discount_amount = self._calculate_discount_amount(coupon=coupon, booking=booking)
 
             booking.coupon_id = coupon.id
@@ -156,11 +158,15 @@ class CouponService:
                     "booking_code": booking.booking_code,
                     "coupon_code": coupon.code,
                     "discount_amount": str(discount_amount),
-                    "applicable_product_type": coupon.applicable_product_type.value
-                    if hasattr(coupon.applicable_product_type, "value")
-                    else str(coupon.applicable_product_type),
+                    "applicable_product_type": enum_to_str(coupon.applicable_product_type),
                 },
             )
+
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
         self.db.refresh(booking)
         self.db.refresh(coupon)

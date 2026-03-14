@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from sqlalchemy.orm import Session
+
 from app.core.exceptions import NotFoundAppException
 from app.models.enums import LogActorType
 from app.repositories.booking_repository import BookingRepository
@@ -8,12 +10,18 @@ from app.services.audit_service import AuditService
 from app.services.pdf_voucher_service import PDFVoucherService
 from app.services.voucher_document_service import VoucherDocumentService
 from app.services.voucher_render_service import VoucherRenderService
+from app.utils.response_mappers import (
+    booking_voucher_to_dict,
+    voucher_item_to_dict,
+    voucher_traveler_to_dict,
+)
 from app.workers.email_worker import EmailWorker
 
 
 class VoucherService:
     def __init__(
         self,
+        db: Session,
         booking_repo: BookingRepository,
         audit_service: AuditService,
         document_repo: DocumentRepository,
@@ -22,6 +30,7 @@ class VoucherService:
         voucher_render_service: VoucherRenderService | None = None,
         voucher_document_service: VoucherDocumentService | None = None,
     ) -> None:
+        self.db = db
         self.booking_repo = booking_repo
         self.audit_service = audit_service
         self.document_repo = document_repo
@@ -63,7 +72,42 @@ class VoucherService:
             user_agent=user_agent,
             metadata={"booking_code": booking.booking_code},
         )
+        self.db.commit()
         return booking
+
+    def render_my_booking_voucher(
+        self,
+        *,
+        booking_id: str,
+        user_id: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> dict:
+        booking = self.get_my_booking_voucher(
+            booking_id=booking_id,
+            user_id=user_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        voucher_type = self._resolve_voucher_type(booking)
+        items = []
+        for item in booking.items:
+            reference_id, title, description = self._build_item_title_and_description(item)
+            items.append(
+                voucher_item_to_dict(
+                    item,
+                    reference_id=reference_id,
+                    title=title,
+                    description=description,
+                )
+            )
+        travelers = [voucher_traveler_to_dict(traveler) for traveler in booking.travelers]
+        return booking_voucher_to_dict(
+            booking,
+            voucher_type=voucher_type,
+            items=items,
+            travelers=travelers,
+        )
 
     def export_my_booking_voucher_pdf(
         self,
@@ -77,11 +121,17 @@ class VoucherService:
         if not booking:
             raise NotFoundAppException("Booking not found")
 
-        return self.voucher_document_service.export_pdf(
-            booking=booking,
-            ip_address=ip_address,
-            user_agent=user_agent,
-        )
+        try:
+            pdf_bytes, filename = self.voucher_document_service.export_pdf(
+                booking=booking,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            self.db.commit()
+            return pdf_bytes, filename
+        except Exception:
+            self.db.rollback()
+            raise
 
     def generate_and_store_my_booking_voucher(
         self,

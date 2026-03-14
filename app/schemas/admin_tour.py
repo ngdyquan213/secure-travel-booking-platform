@@ -3,6 +3,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
+from app.models.enums import TourScheduleStatus, TourStatus, TravelerType
+
 
 class AdminTourCreateRequest(BaseModel):
     code: str = Field(min_length=1, max_length=50)
@@ -13,7 +15,7 @@ class AdminTourCreateRequest(BaseModel):
     duration_nights: int = Field(ge=0, le=30)
     meeting_point: str | None = Field(default=None, max_length=255)
     tour_type: str | None = Field(default=None, max_length=100)
-    status: str = "active"
+    status: TourStatus = TourStatus.active
 
 
 class AdminTourUpdateRequest(BaseModel):
@@ -24,7 +26,7 @@ class AdminTourUpdateRequest(BaseModel):
     duration_nights: int | None = Field(default=None, ge=0, le=30)
     meeting_point: str | None = Field(default=None, max_length=255)
     tour_type: str | None = Field(default=None, max_length=100)
-    status: str | None = None
+    status: TourStatus | None = None
 
 
 class AdminTourResponse(BaseModel):
@@ -37,7 +39,7 @@ class AdminTourResponse(BaseModel):
     duration_nights: int
     meeting_point: str | None = None
     tour_type: str | None = None
-    status: str
+    status: TourStatus
 
 
 class AdminTourScheduleCreateRequest(BaseModel):
@@ -45,7 +47,7 @@ class AdminTourScheduleCreateRequest(BaseModel):
     return_date: date
     capacity: int = Field(ge=1, le=500)
     available_slots: int = Field(ge=0, le=500)
-    status: str = "scheduled"
+    status: TourScheduleStatus = TourScheduleStatus.scheduled
 
 
 class AdminTourScheduleUpdateRequest(BaseModel):
@@ -53,7 +55,7 @@ class AdminTourScheduleUpdateRequest(BaseModel):
     return_date: date | None = None
     capacity: int | None = Field(default=None, ge=1, le=500)
     available_slots: int | None = Field(default=None, ge=0, le=500)
-    status: str | None = None
+    status: TourScheduleStatus | None = None
 
 
 class AdminTourScheduleResponse(BaseModel):
@@ -63,11 +65,11 @@ class AdminTourScheduleResponse(BaseModel):
     return_date: date
     capacity: int
     available_slots: int
-    status: str
+    status: TourScheduleStatus
 
 
 class AdminTourPriceRuleCreateRequest(BaseModel):
-    traveler_type: str
+    traveler_type: TravelerType
     price: Decimal = Field(ge=0)
     currency: str = "VND"
 
@@ -75,6 +77,6 @@ class AdminTourPriceRuleCreateRequest(BaseModel):
 class AdminTourPriceRuleResponse(BaseModel):
     id: str
     tour_schedule_id: str
-    traveler_type: str
+    traveler_type: TravelerType
     price: Decimal
     currency: str

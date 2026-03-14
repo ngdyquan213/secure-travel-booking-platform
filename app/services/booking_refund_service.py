@@ -6,6 +6,7 @@ from decimal import Decimal
 from app.models.enums import PaymentStatus, RefundStatus
 from app.models.refund import Refund
 from app.repositories.payment_repository import PaymentRepository
+from app.utils.enums import enum_to_str
 
 
 class BookingRefundService:
@@ -16,7 +17,7 @@ class BookingRefundService:
         if not payment:
             return Decimal("0.00")
 
-        payment_status = payment.status.value if hasattr(payment.status, "value") else str(payment.status)
+        payment_status = enum_to_str(payment.status)
         if payment_status != PaymentStatus.paid.value:
             return Decimal("0.00")
 
@@ -30,7 +31,7 @@ class BookingRefundService:
             return payment, refund, refund_amount
 
         refund_amount = self.calculate_refund_amount(booking, payment)
-        payment_status = payment.status.value if hasattr(payment.status, "value") else str(payment.status)
+        payment_status = enum_to_str(payment.status)
 
         if payment_status == PaymentStatus.paid.value:
             refund = Refund(

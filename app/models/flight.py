@@ -60,7 +60,9 @@ class Flight(Base, TimestampMixin):
     __tablename__ = "flights"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    airline_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("airlines.id"), nullable=False)
+    airline_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("airlines.id"), nullable=False
+    )
     flight_number: Mapped[str] = mapped_column(String(50), nullable=False)
 
     departure_airport_id: Mapped[uuid.UUID] = mapped_column(

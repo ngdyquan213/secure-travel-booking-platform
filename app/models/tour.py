@@ -29,7 +29,7 @@ class Tour(Base, TimestampMixin):
     meeting_point: Mapped[str | None] = mapped_column(String(255), nullable=True)
     tour_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[TourStatus] = mapped_column(
-        Enum(TourStatus, name="tour_status"),
+        Enum(TourStatus, name="tour_status", native_enum=False),
         nullable=False,
         default=TourStatus.active,
     )
@@ -65,7 +65,7 @@ class TourSchedule(Base, TimestampMixin):
     capacity: Mapped[int] = mapped_column(Integer, nullable=False)
     available_slots: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[TourScheduleStatus] = mapped_column(
-        Enum(TourScheduleStatus, name="tour_schedule_status"),
+        Enum(TourScheduleStatus, name="tour_schedule_status", native_enum=False),
         nullable=False,
         default=TourScheduleStatus.scheduled,
     )
@@ -92,7 +92,7 @@ class TourPriceRule(Base, TimestampMixin):
         nullable=False,
     )
     traveler_type: Mapped[TravelerType] = mapped_column(
-        Enum(TravelerType, name="traveler_type"),
+        Enum(TravelerType, name="traveler_type", native_enum=False),
         nullable=False,
     )
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)

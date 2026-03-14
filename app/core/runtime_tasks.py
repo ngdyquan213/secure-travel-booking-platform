@@ -17,9 +17,7 @@ def cleanup_refresh_tokens() -> None:
 
         now = datetime.now(timezone.utc)
         expired_deleted = repo.delete_expired_refresh_tokens(now)
-        revoked_deleted = repo.delete_old_revoked_refresh_tokens(
-            older_than=now - timedelta(days=7)
-        )
+        revoked_deleted = repo.delete_old_revoked_refresh_tokens(older_than=now - timedelta(days=7))
 
         db.commit()
 

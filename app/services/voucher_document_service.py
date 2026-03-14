@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
+from app.core.config import settings
 from app.models.document import UploadedDocument
 from app.models.enums import DocumentType, LogActorType
 from app.repositories.document_repository import DocumentRepository
@@ -24,7 +26,9 @@ class VoucherDocumentService:
         self.pdf_voucher_service = pdf_voucher_service or PDFVoucherService()
         self.email_worker = email_worker or EmailWorker()
 
-    def export_pdf(self, *, booking, ip_address: str | None = None, user_agent: str | None = None) -> tuple[bytes, str]:
+    def export_pdf(
+        self, *, booking, ip_address: str | None = None, user_agent: str | None = None
+    ) -> tuple[bytes, str]:
         self.audit_service.log_action(
             actor_type=LogActorType.user,
             actor_user_id=booking.user_id,
@@ -47,7 +51,7 @@ class VoucherDocumentService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> UploadedDocument:
-        upload_dir = Path("uploads")
+        upload_dir = Path(settings.LOCAL_UPLOAD_DIR).resolve()
         upload_dir.mkdir(parents=True, exist_ok=True)
 
         pdf_bytes = self.pdf_voucher_service.generate_pdf_bytes(booking)
@@ -55,39 +59,48 @@ class VoucherDocumentService:
         stored_filename = generate_stored_filename(original_filename)
         storage_path = upload_dir / stored_filename
 
-        with open(storage_path, "wb") as f:
-            f.write(pdf_bytes)
+        try:
+            with open(storage_path, "wb") as f:
+                f.write(pdf_bytes)
 
-        document = UploadedDocument(
-            user_id=booking.user_id,
-            booking_id=booking.id,
-            traveler_id=None,
-            document_type=DocumentType.voucher,
-            original_filename=original_filename,
-            stored_filename=stored_filename,
-            mime_type="application/pdf",
-            file_size=len(pdf_bytes),
-            storage_bucket="local",
-            storage_key=str(storage_path),
-            is_private=True,
-        )
-        self.document_repo.add_document(document)
+            document = UploadedDocument(
+                user_id=booking.user_id,
+                booking_id=booking.id,
+                traveler_id=None,
+                document_type=DocumentType.voucher,
+                original_filename=original_filename,
+                stored_filename=stored_filename,
+                mime_type="application/pdf",
+                file_size=len(pdf_bytes),
+                storage_bucket="local",
+                storage_key=str(storage_path),
+                checksum_sha256=hashlib.sha256(pdf_bytes).hexdigest(),
+                is_private=True,
+            )
+            self.document_repo.add_document(document)
 
-        self.audit_service.log_action(
-            actor_type=LogActorType.user,
-            actor_user_id=booking.user_id,
-            action="booking_voucher_generated",
-            resource_type="uploaded_document",
-            resource_id=document.id,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            metadata={
-                "booking_id": str(booking.id),
-                "booking_code": booking.booking_code,
-                "document_type": "voucher",
-                "storage_key": str(storage_path),
-            },
-        )
+            self.audit_service.log_action(
+                actor_type=LogActorType.user,
+                actor_user_id=booking.user_id,
+                action="booking_voucher_generated",
+                resource_type="uploaded_document",
+                resource_id=document.id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                metadata={
+                    "booking_id": str(booking.id),
+                    "booking_code": booking.booking_code,
+                    "document_type": "voucher",
+                    "storage_key": str(storage_path),
+                },
+            )
+
+            self.document_repo.db.commit()
+            self.document_repo.db.refresh(document)
+        except Exception:
+            self.document_repo.db.rollback()
+            storage_path.unlink(missing_ok=True)
+            raise
 
         if booking.user:
             self.email_worker.send_voucher_generated_email(

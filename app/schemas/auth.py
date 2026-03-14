@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.models.enums import UserStatus
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -38,6 +40,6 @@ class UserMeResponse(BaseModel):
     email: str
     username: str
     full_name: str
-    status: str
+    status: UserStatus
     email_verified: bool
     created_at: datetime

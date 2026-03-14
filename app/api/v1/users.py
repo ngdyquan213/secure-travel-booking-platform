@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import build_user_service, get_current_user
 from app.core.database import get_db
-from app.models.enums import LogActorType
-from app.repositories.audit_repository import AuditRepository
 from app.schemas.user import UserResponse
-from app.services.audit_service import AuditService
+from app.utils.request_context import get_client_ip, get_user_agent
+from app.utils.response_mappers import user_to_dict
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -17,23 +16,10 @@ def get_me(
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> UserResponse:
-    audit_service = AuditService(AuditRepository(db))
-    audit_service.log_action(
-        actor_type=LogActorType.user,
-        actor_user_id=current_user.id,
-        action="user_profile_viewed",
-        resource_type="user",
-        resource_id=current_user.id,
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-        metadata={"endpoint": "/users/me"},
+    service = build_user_service(db)
+    user = service.get_my_profile(
+        current_user=current_user,
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
     )
-    db.commit()
-
-    return UserResponse(
-        id=str(current_user.id),
-        email=current_user.email,
-        username=current_user.username,
-        full_name=current_user.full_name,
-        status=current_user.status.value if hasattr(current_user.status, "value") else str(current_user.status),
-    )
+    return UserResponse(**user_to_dict(user))

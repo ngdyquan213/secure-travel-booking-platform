@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -101,13 +102,19 @@ def health_ready():
 
     ready = db_ok and redis_ok
 
-    return {
+    payload = {
         "status": "ready" if ready else "not_ready",
+        "service": settings.APP_NAME,
+        "environment": settings.ENVIRONMENT,
         "checks": {
             "database": db_ok,
             "redis": redis_ok,
         },
     }
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE,
+        content=payload,
+    )
 
 
 app.include_router(api_router, prefix="/api/v1")

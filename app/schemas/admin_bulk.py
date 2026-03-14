@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from app.models.enums import RefundStatus
+
 
 class BulkIdsRequest(BaseModel):
     ids: list[str] = Field(min_length=1, max_length=100)
@@ -7,7 +9,7 @@ class BulkIdsRequest(BaseModel):
 
 class BulkRefundUpdateRequest(BaseModel):
     refund_ids: list[str] = Field(min_length=1, max_length=100)
-    status: str = Field(pattern="^(processed|failed|cancelled)$")
+    status: RefundStatus
     reason: str | None = Field(default=None, max_length=500)
 
 

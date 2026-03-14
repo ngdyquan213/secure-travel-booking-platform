@@ -1,6 +1,7 @@
-import pytest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+
+import pytest
 
 from app.core.security import get_password_hash
 from app.models.booking import Booking, BookingItem
@@ -14,7 +15,6 @@ from app.models.enums import (
     UserStatus,
 )
 from app.models.user import User
-
 
 pytestmark = pytest.mark.postgres
 

@@ -1,5 +1,5 @@
 import enum
-from enum import Enum
+
 
 class UserStatus(str, enum.Enum):
     active = "active"
@@ -89,11 +89,12 @@ class TravelerType(str, enum.Enum):
     infant = "infant"
 
 
-class CouponApplicableProductType(str, Enum):
+class CouponApplicableProductType(str, enum.Enum):
     all = "all"
     flight = "flight"
     hotel = "hotel"
     tour = "tour"
+
 
 class RefundStatus(str, enum.Enum):
     pending = "pending"

@@ -1,6 +1,7 @@
 from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session, joinedload
 
+from app.models.enums import TourStatus
 from app.models.tour import Tour, TourPriceRule, TourSchedule
 
 
@@ -13,18 +14,15 @@ class TourRepository:
         skip: int = 0,
         limit: int = 20,
         destination: str | None = None,
-        status: str | None = None,
+        status: TourStatus | None = None,
         tour_type: str | None = None,
         sort_by: str = "name",
         sort_order: str = "asc",
     ) -> list[Tour]:
-        query = (
-            self.db.query(Tour)
-            .options(
-                joinedload(Tour.schedules).joinedload(TourSchedule.price_rules),
-                joinedload(Tour.itineraries),
-                joinedload(Tour.policies),
-            )
+        query = self.db.query(Tour).options(
+            joinedload(Tour.schedules).joinedload(TourSchedule.price_rules),
+            joinedload(Tour.itineraries),
+            joinedload(Tour.policies),
         )
 
         if destination:
@@ -49,7 +47,7 @@ class TourRepository:
     def count_tours(
         self,
         destination: str | None = None,
-        status: str | None = None,
+        status: TourStatus | None = None,
         tour_type: str | None = None,
     ) -> int:
         query = self.db.query(Tour)

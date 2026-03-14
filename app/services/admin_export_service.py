@@ -1,30 +1,65 @@
 from __future__ import annotations
 
+from sqlalchemy.orm import Session
+
+from app.models.enums import BookingStatus, LogActorType, PaymentStatus, RefundStatus
 from app.repositories.admin_repository import AdminRepository
+from app.services.audit_service import AuditService
 from app.utils.csv_utils import build_csv_bytes
+from app.utils.enums import enum_to_str
 
 
 class AdminExportService:
-    def __init__(self, admin_repo: AdminRepository) -> None:
+    def __init__(
+        self,
+        admin_repo: AdminRepository,
+        db: Session | None = None,
+        audit_service: AuditService | None = None,
+    ) -> None:
         self.admin_repo = admin_repo
+        self.db = db
+        self.audit_service = audit_service
+
+    @staticmethod
+    def _collect_in_batches(fetch_page, *, batch_size: int = 1000):
+        items = []
+        skip = 0
+
+        while True:
+            batch = fetch_page(skip, batch_size)
+            if not batch:
+                break
+
+            items.extend(batch)
+            if len(batch) < batch_size:
+                break
+
+            skip += batch_size
+
+        return items
 
     def export_bookings_csv(
         self,
         *,
-        status: str | None = None,
-        payment_status: str | None = None,
+        status: BookingStatus | None = None,
+        payment_status: PaymentStatus | None = None,
         booking_code: str | None = None,
         sort_by: str = "booked_at",
         sort_order: str = "desc",
+        actor_user_id=None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
     ) -> bytes:
-        bookings = self.admin_repo.list_bookings(
-            skip=0,
-            limit=10000,
-            status=status,
-            payment_status=payment_status,
-            booking_code=booking_code,
-            sort_by=sort_by,
-            sort_order=sort_order,
+        bookings = self._collect_in_batches(
+            lambda skip, limit: self.admin_repo.list_bookings(
+                skip=skip,
+                limit=limit,
+                status=status,
+                payment_status=payment_status,
+                booking_code=booking_code,
+                sort_by=sort_by,
+                sort_order=sort_order,
+            )
         )
 
         headers = [
@@ -43,32 +78,52 @@ class AdminExportService:
                 str(b.id),
                 b.booking_code,
                 str(b.user_id),
-                b.status.value if hasattr(b.status, "value") else str(b.status),
+                enum_to_str(b.status),
                 str(b.total_final_amount),
                 b.currency,
-                b.payment_status.value if hasattr(b.payment_status, "value") else str(b.payment_status),
+                enum_to_str(b.payment_status),
                 b.booked_at.isoformat() if b.booked_at else "",
                 b.cancelled_at.isoformat() if getattr(b, "cancelled_at", None) else "",
             ]
             for b in bookings
         ]
-        return build_csv_bytes(headers, rows)
+        csv_bytes = build_csv_bytes(headers, rows)
+        self._audit_export(
+            actor_user_id=actor_user_id,
+            action="admin_export_bookings_csv",
+            resource_type="booking",
+            ip_address=ip_address,
+            user_agent=user_agent,
+            metadata={
+                "status": status,
+                "payment_status": payment_status,
+                "booking_code": booking_code,
+                "sort_by": sort_by,
+                "sort_order": sort_order,
+            },
+        )
+        return csv_bytes
 
     def export_refunds_csv(
         self,
         *,
-        status: str | None = None,
+        status: RefundStatus | None = None,
         payment_id: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        actor_user_id=None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
     ) -> bytes:
-        refunds = self.admin_repo.list_refunds(
-            skip=0,
-            limit=10000,
-            status=status,
-            payment_id=payment_id,
-            sort_by=sort_by,
-            sort_order=sort_order,
+        refunds = self._collect_in_batches(
+            lambda skip, limit: self.admin_repo.list_refunds(
+                skip=skip,
+                limit=limit,
+                status=status,
+                payment_id=payment_id,
+                sort_by=sort_by,
+                sort_order=sort_order,
+            )
         )
 
         headers = [
@@ -87,17 +142,37 @@ class AdminExportService:
                 str(r.payment_id),
                 str(r.amount),
                 r.currency,
-                r.status.value if hasattr(r.status, "value") else str(r.status),
+                enum_to_str(r.status),
                 r.reason or "",
                 r.processed_at.isoformat() if r.processed_at else "",
                 r.created_at.isoformat() if r.created_at else "",
             ]
             for r in refunds
         ]
-        return build_csv_bytes(headers, rows)
+        csv_bytes = build_csv_bytes(headers, rows)
+        self._audit_export(
+            actor_user_id=actor_user_id,
+            action="admin_export_refunds_csv",
+            resource_type="refund",
+            ip_address=ip_address,
+            user_agent=user_agent,
+            metadata={
+                "status": status,
+                "payment_id": payment_id,
+                "sort_by": sort_by,
+                "sort_order": sort_order,
+            },
+        )
+        return csv_bytes
 
-    def export_audit_logs_csv(self) -> bytes:
-        logs = self.admin_repo.list_audit_logs(skip=0, limit=10000)
+    def export_audit_logs_csv(
+        self,
+        *,
+        actor_user_id=None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> bytes:
+        logs = self._collect_in_batches(self.admin_repo.list_audit_logs)
 
         headers = [
             "id",
@@ -113,7 +188,7 @@ class AdminExportService:
         rows = [
             [
                 str(log.id),
-                log.actor_type.value if hasattr(log.actor_type, "value") else str(log.actor_type),
+                enum_to_str(log.actor_type),
                 str(log.actor_user_id) if log.actor_user_id else "",
                 log.action,
                 log.resource_type or "",
@@ -124,4 +199,42 @@ class AdminExportService:
             ]
             for log in logs
         ]
-        return build_csv_bytes(headers, rows)
+        csv_bytes = build_csv_bytes(headers, rows)
+        self._audit_export(
+            actor_user_id=actor_user_id,
+            action="admin_export_audit_logs_csv",
+            resource_type="audit_log",
+            ip_address=ip_address,
+            user_agent=user_agent,
+            metadata={},
+        )
+        return csv_bytes
+
+    def _audit_export(
+        self,
+        *,
+        actor_user_id,
+        action: str,
+        resource_type: str,
+        ip_address: str | None,
+        user_agent: str | None,
+        metadata: dict | None,
+    ) -> None:
+        if actor_user_id is None or self.db is None or self.audit_service is None:
+            return
+
+        try:
+            self.audit_service.log_action(
+                actor_type=LogActorType.admin,
+                actor_user_id=actor_user_id,
+                action=action,
+                resource_type=resource_type,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                metadata=metadata,
+            )
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+ 

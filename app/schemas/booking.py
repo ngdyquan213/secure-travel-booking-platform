@@ -3,6 +3,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.models.enums import BookingStatus, PaymentStatus, RefundStatus
+
 
 class BookingCreateRequest(BaseModel):
     flight_id: str
@@ -13,7 +15,7 @@ class HotelBookingCreateRequest(BaseModel):
     hotel_room_id: str
     check_in_date: date
     check_out_date: date
-    quantity: int = Field(ge=1, le=5)
+    quantity: int = Field(ge=1)
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -43,11 +45,11 @@ class BookingCancelRequest(BaseModel):
 class BookingCancelResponse(BaseModel):
     booking_id: str
     booking_code: str
-    status: str
-    payment_status: str
+    status: BookingStatus
+    payment_status: PaymentStatus
     refund_amount: Decimal
     refund_currency: str
-    refund_status: str | None = None
+    refund_status: RefundStatus | None = None
     cancellation_reason: str | None = None
 
 
@@ -55,10 +57,10 @@ class BookingResponse(BaseModel):
     id: str
     booking_code: str
     user_id: str
-    status: str
+    status: BookingStatus
     total_base_amount: Decimal
     total_discount_amount: Decimal
     total_final_amount: Decimal
     currency: str
-    payment_status: str
+    payment_status: PaymentStatus
     booked_at: datetime

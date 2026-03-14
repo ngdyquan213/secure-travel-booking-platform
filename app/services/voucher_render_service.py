@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.models.enums import BookingItemType
+from app.utils.enums import enum_to_str
 
 
 class VoucherRenderService:
@@ -8,10 +9,7 @@ class VoucherRenderService:
         if not booking.items:
             return "booking"
 
-        item_types = {
-            item.item_type.value if hasattr(item.item_type, "value") else str(item.item_type)
-            for item in booking.items
-        }
+        item_types = {enum_to_str(item.item_type) for item in booking.items}
 
         if len(item_types) == 1:
             item_type = next(iter(item_types))
@@ -29,7 +27,7 @@ class VoucherRenderService:
         title = "Booking Item"
         description = None
 
-        item_type = item.item_type.value if hasattr(item.item_type, "value") else str(item.item_type)
+        item_type = enum_to_str(item.item_type)
 
         if item_type == BookingItemType.flight.value and item.flight is not None:
             reference_id = str(item.flight.id)
@@ -47,8 +45,12 @@ class VoucherRenderService:
             reference_id = str(item.tour_schedule.id)
             title = item.tour_schedule.tour.name if item.tour_schedule.tour else "Tour booking"
             description = (
-                f"{item.tour_schedule.tour.destination} | "
-                f"{item.tour_schedule.departure_date} -> {item.tour_schedule.return_date}"
-            ) if item.tour_schedule.tour else "Tour booking"
+                (
+                    f"{item.tour_schedule.tour.destination} | "
+                    f"{item.tour_schedule.departure_date} -> {item.tour_schedule.return_date}"
+                )
+                if item.tour_schedule.tour
+                else "Tour booking"
+            )
 
         return reference_id, title, description

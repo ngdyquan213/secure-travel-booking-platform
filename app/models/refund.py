@@ -28,7 +28,7 @@ class Refund(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="VND")
     status: Mapped[RefundStatus] = mapped_column(
-        Enum(RefundStatus, name="refund_status"),
+        Enum(RefundStatus, name="refund_status", native_enum=False),
         nullable=False,
         default=RefundStatus.pending,
     )

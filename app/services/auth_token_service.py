@@ -35,9 +35,12 @@ class AuthTokenService:
         refresh_token = self.create_and_store_refresh_token(user_id=user_id)
         return access_token, refresh_token
 
-    def validate_refresh_token(self, *, refresh_token: str):
+    def validate_refresh_token(self, *, refresh_token: str, lock_for_update: bool = False):
         token_hash = hash_refresh_token(refresh_token)
-        stored = self.user_repo.get_refresh_token_by_hash(token_hash)
+        if lock_for_update:
+            stored = self.user_repo.get_refresh_token_by_hash_for_update(token_hash)
+        else:
+            stored = self.user_repo.get_refresh_token_by_hash(token_hash)
 
         if not stored:
             raise ValueError("Invalid refresh token")
@@ -51,8 +54,17 @@ class AuthTokenService:
 
         return stored
 
-    def rotate_refresh_token(self, *, refresh_token: str, user_id: str) -> tuple[object, str, str]:
-        stored = self.validate_refresh_token(refresh_token=refresh_token)
+    def rotate_refresh_token(
+        self,
+        *,
+        refresh_token: str,
+        user_id: str,
+        stored_token: RefreshToken | None = None,
+    ) -> tuple[RefreshToken, str, str]:
+        stored = stored_token or self.validate_refresh_token(
+            refresh_token=refresh_token,
+            lock_for_update=True,
+        )
         now = datetime.now(timezone.utc)
 
         self.user_repo.revoke_refresh_token(stored, revoked_at=now)

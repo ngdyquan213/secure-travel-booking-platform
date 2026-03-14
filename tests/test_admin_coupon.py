@@ -1,8 +1,8 @@
 from app.core.security import get_password_hash
+from app.models.coupon import Coupon
 from app.models.enums import CouponType, UserStatus
 from app.models.role import Role, UserRole
 from app.models.user import User
-from app.models.coupon import Coupon
 
 
 def create_admin_and_login(client, db_session):
@@ -113,6 +113,11 @@ def test_admin_can_deactivate_coupon(client, db_session):
     body = resp.json()
     assert body["id"] == str(coupon.id)
     assert body["is_active"] is False
+
+    db_session.expire_all()
+    saved_coupon = db_session.query(Coupon).filter(Coupon.id == coupon.id).first()
+    assert saved_coupon is not None
+    assert saved_coupon.is_active is False
 
 
 def test_non_admin_cannot_update_coupon(client, db_session):

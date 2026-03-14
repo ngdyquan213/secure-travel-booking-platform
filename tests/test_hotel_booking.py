@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from app.core.security import get_password_hash
 from app.models.enums import UserStatus
-from app.models.hotel import Hotel, HotelRoom
+from app.models.hotel import Hotel, HotelRoom, HotelRoomInventory
 from app.models.user import User
 
 
@@ -79,7 +79,16 @@ def test_create_hotel_booking_success(client, db_session):
     assert body["currency"] == "VND"
 
     db_session.refresh(room)
-    assert room.total_rooms == 4
+    assert room.total_rooms == 5
+
+    inventories = (
+        db_session.query(HotelRoomInventory)
+        .filter(HotelRoomInventory.room_id == room.id)
+        .order_by(HotelRoomInventory.inventory_date.asc())
+        .all()
+    )
+    assert len(inventories) == 2
+    assert [inventory.available_rooms for inventory in inventories] == [4, 4]
 
 
 def test_hotel_booking_invalid_date_range(client, db_session):
@@ -126,4 +135,145 @@ def test_hotel_booking_not_enough_rooms(client, db_session):
     )
 
     assert resp.status_code == 400
-    assert resp.json()["detail"] == "Not enough available rooms"
+    assert resp.json()["detail"] == "Not enough available rooms for the selected dates"
+
+
+def test_hotel_booking_allows_non_overlapping_stays(client, db_session):
+    _, token = create_user_and_login(
+        client,
+        db_session,
+        "hotelbooking4@example.com",
+        "hotel_booking_user_4",
+    )
+    room = seed_hotel_room(db_session)
+
+    first = client.post(
+        "/api/v1/bookings/hotels",
+        json={
+            "hotel_room_id": str(room.id),
+            "check_in_date": "2026-01-10",
+            "check_out_date": "2026-01-12",
+            "quantity": 5,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/api/v1/bookings/hotels",
+        json={
+            "hotel_room_id": str(room.id),
+            "check_in_date": "2026-01-12",
+            "check_out_date": "2026-01-14",
+            "quantity": 5,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert second.status_code == 201
+
+
+def test_hotel_booking_blocks_overlapping_stays_when_inventory_is_exhausted(client, db_session):
+    _, token = create_user_and_login(
+        client,
+        db_session,
+        "hotelbooking5@example.com",
+        "hotel_booking_user_5",
+    )
+    room = seed_hotel_room(db_session)
+
+    first = client.post(
+        "/api/v1/bookings/hotels",
+        json={
+            "hotel_room_id": str(room.id),
+            "check_in_date": "2026-01-10",
+            "check_out_date": "2026-01-12",
+            "quantity": 5,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/api/v1/bookings/hotels",
+        json={
+            "hotel_room_id": str(room.id),
+            "check_in_date": "2026-01-11",
+            "check_out_date": "2026-01-13",
+            "quantity": 1,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert second.status_code == 400
+    assert second.json()["detail"] == "Not enough available rooms for the selected dates"
+
+
+def test_hotel_inventory_is_restored_after_cancellation(client, db_session):
+    _, token = create_user_and_login(
+        client,
+        db_session,
+        "hotelbooking6@example.com",
+        "hotel_booking_user_6",
+    )
+    room = seed_hotel_room(db_session)
+
+    booking_resp = client.post(
+        "/api/v1/bookings/hotels",
+        json={
+            "hotel_room_id": str(room.id),
+            "check_in_date": "2026-01-10",
+            "check_out_date": "2026-01-12",
+            "quantity": 2,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert booking_resp.status_code == 201
+    booking_id = booking_resp.json()["id"]
+
+    cancel_resp = client.post(
+        f"/api/v1/bookings/{booking_id}/cancel",
+        json={"reason": "Change of plan"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert cancel_resp.status_code == 200
+
+    inventories = (
+        db_session.query(HotelRoomInventory)
+        .filter(HotelRoomInventory.room_id == room.id)
+        .order_by(HotelRoomInventory.inventory_date.asc())
+        .all()
+    )
+    assert len(inventories) == 2
+    assert [inventory.available_rooms for inventory in inventories] == [5, 5]
+
+
+def test_list_hotels_returns_date_range_availability(client, db_session):
+    room = seed_hotel_room(db_session)
+    room_id = str(room.id)
+
+    inventories = [
+        HotelRoomInventory(
+            room_id=room.id,
+            inventory_date=date(2026, 1, 10),
+            available_rooms=3,
+        ),
+        HotelRoomInventory(
+            room_id=room.id,
+            inventory_date=date(2026, 1, 11),
+            available_rooms=2,
+        ),
+    ]
+    db_session.add_all(inventories)
+    db_session.commit()
+
+    resp = client.get(
+        "/api/v1/hotels?check_in_date=2026-01-10&check_out_date=2026-01-12"
+    )
+    assert resp.status_code == 200
+
+    target_room = next(
+        room_item
+        for hotel in resp.json()["items"]
+        for room_item in hotel["rooms"]
+        if room_item["id"] == room_id
+    )
+    assert target_room["available_rooms"] == 2

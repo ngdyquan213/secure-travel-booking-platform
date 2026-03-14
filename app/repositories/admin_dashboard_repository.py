@@ -7,8 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.models.audit import AuditLog
 from app.models.booking import Booking
+from app.models.enums import PaymentStatus, RefundStatus
 from app.models.payment import Payment
 from app.models.refund import Refund
+from app.utils.enums import enum_to_str
 
 
 class AdminDashboardRepository:
@@ -26,7 +28,7 @@ class AdminDashboardRepository:
         )
         return [
             {
-                "status": row.status.value if hasattr(row.status, "value") else str(row.status),
+                "status": enum_to_str(row.status),
                 "count": int(row.count),
             }
             for row in rows
@@ -43,7 +45,7 @@ class AdminDashboardRepository:
         )
         return [
             {
-                "status": row.status.value if hasattr(row.status, "value") else str(row.status),
+                "status": enum_to_str(row.status),
                 "count": int(row.count),
             }
             for row in rows
@@ -60,7 +62,7 @@ class AdminDashboardRepository:
         )
         return [
             {
-                "status": row.status.value if hasattr(row.status, "value") else str(row.status),
+                "status": enum_to_str(row.status),
                 "count": int(row.count),
             }
             for row in rows
@@ -69,7 +71,7 @@ class AdminDashboardRepository:
     def get_revenue_summary(self) -> dict:
         paid_total = (
             self.db.query(func.coalesce(func.sum(Payment.amount), 0))
-            .filter(Payment.status == "paid")
+            .filter(Payment.status == PaymentStatus.paid)
             .scalar()
         )
         if paid_total is None:
@@ -77,7 +79,7 @@ class AdminDashboardRepository:
 
         refunded_total = (
             self.db.query(func.coalesce(func.sum(Refund.amount), 0))
-            .filter(Refund.status == "processed")
+            .filter(Refund.status == RefundStatus.processed)
             .scalar()
         )
         if refunded_total is None:
@@ -95,9 +97,4 @@ class AdminDashboardRepository:
         }
 
     def get_recent_activities(self, limit: int = 10) -> list[AuditLog]:
-        return (
-            self.db.query(AuditLog)
-            .order_by(AuditLog.created_at.desc())
-            .limit(limit)
-            .all()
-        )
+        return self.db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit).all()

@@ -1,20 +1,31 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+import pytest
+from sqlalchemy.orm import sessionmaker
+
 from app.core.security import build_payment_callback_signature, get_password_hash
 from app.models.booking import Booking, BookingItem
 from app.models.enums import (
     BookingItemType,
     BookingStatus,
+    PaymentMethod,
     PaymentStatus,
     UserStatus,
 )
 from app.models.flight import Airline, Airport, Flight
+from app.models.payment import Payment, PaymentCallback
 from app.models.user import User
+from app.repositories.audit_repository import AuditRepository
+from app.repositories.booking_repository import BookingRepository
 from app.repositories.payment_repository import PaymentRepository
+from app.services.audit_service import AuditService
+from app.services.payment_callback_service import PaymentCallbackService
 
 
-def create_user_and_login(client, db_session, *, email: str, username: str, password: str = "Password123"):
+def create_user_and_login(
+    client, db_session, *, email: str, username: str, password: str = "Password123"
+):
     user = User(
         email=email,
         username=username,
@@ -85,22 +96,84 @@ def seed_booking_for_payment(db_session, user_id: str):
     return booking
 
 
-def test_payment_callback_rolls_back_if_payment_save_fails(client, db_session, monkeypatch):
-    user, token = create_user_and_login(
-        client,
-        db_session,
+def test_payment_callback_rolls_back_if_payment_save_fails(db_engine, monkeypatch):
+    SessionLocal = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+
+    seed_session = SessionLocal()
+    user = User(
         email="tx-pay@example.com",
         username="tx_pay",
+        full_name="Tx Pay",
+        password_hash=get_password_hash("Password123"),
+        status=UserStatus.active,
+        email_verified=True,
+        phone_verified=False,
+        failed_login_count=0,
     )
-    booking = seed_booking_for_payment(db_session, str(user.id))
+    seed_session.add(user)
+    seed_session.flush()
 
-    init_resp = client.post(
-        "/api/v1/payments/initiate",
-        json={"booking_id": str(booking.id), "payment_method": "vnpay"},
-        headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "tx-pay-001"},
+    airline = Airline(code="TR", name="Rollback Carrier")
+    dep = Airport(code="TRA", name="A", city="HCM", country="VN")
+    arr = Airport(code="TRB", name="B", city="HN", country="VN")
+    seed_session.add_all([airline, dep, arr])
+    seed_session.flush()
+
+    flight = Flight(
+        airline_id=airline.id,
+        flight_number="TR100",
+        departure_airport_id=dep.id,
+        arrival_airport_id=arr.id,
+        departure_time=datetime.now(timezone.utc) + timedelta(days=1),
+        arrival_time=datetime.now(timezone.utc) + timedelta(days=1, hours=2),
+        base_price=Decimal("1000000.00"),
+        available_seats=10,
+        status="scheduled",
     )
-    assert init_resp.status_code in (200, 201)
-    payment = init_resp.json()
+    seed_session.add(flight)
+    seed_session.flush()
+
+    booking = Booking(
+        booking_code="BK-TX-ROLLBACK-001",
+        user_id=user.id,
+        status=BookingStatus.pending,
+        total_base_amount=Decimal("1000000.00"),
+        total_discount_amount=Decimal("0.00"),
+        total_final_amount=Decimal("1000000.00"),
+        currency="VND",
+        payment_status=PaymentStatus.pending,
+        booked_at=datetime.now(timezone.utc),
+    )
+    seed_session.add(booking)
+    seed_session.flush()
+
+    seed_session.add(
+        BookingItem(
+            booking_id=booking.id,
+            item_type=BookingItemType.flight,
+            flight_id=flight.id,
+            quantity=1,
+            unit_price=Decimal("1000000.00"),
+            total_price=Decimal("1000000.00"),
+        )
+    )
+    payment = Payment(
+        booking_id=booking.id,
+        initiated_by=user.id,
+        payment_method=PaymentMethod.vnpay,
+        status=PaymentStatus.pending,
+        amount=Decimal("1000000.00"),
+        currency="VND",
+        gateway_order_ref="PAY-TX-ROLLBACK-001",
+        gateway_transaction_ref=None,
+        idempotency_key="tx-rollback-idem-001",
+        paid_at=None,
+    )
+    seed_session.add(payment)
+    seed_session.commit()
+    payment_id = payment.id
+    booking_id = booking.id
+    seed_session.close()
 
     original_save = PaymentRepository.save
 
@@ -109,9 +182,17 @@ def test_payment_callback_rolls_back_if_payment_save_fails(client, db_session, m
 
     monkeypatch.setattr(PaymentRepository, "save", broken_save)
 
+    callback_session = SessionLocal()
+    service = PaymentCallbackService(
+        db=callback_session,
+        booking_repo=BookingRepository(callback_session),
+        payment_repo=PaymentRepository(callback_session),
+        audit_service=AuditService(AuditRepository(callback_session)),
+    )
+
     payload = {
         "gateway_name": "vnpay",
-        "gateway_order_ref": payment["gateway_order_ref"],
+        "gateway_order_ref": "PAY-TX-ROLLBACK-001",
         "gateway_transaction_ref": "TXN-TX-ROLLBACK-001",
         "amount": "1000000.00",
         "currency": "VND",
@@ -119,14 +200,154 @@ def test_payment_callback_rolls_back_if_payment_save_fails(client, db_session, m
     }
     payload["signature"] = build_payment_callback_signature(**payload)
 
-    resp = client.post("/api/v1/payments/callback", json=payload)
-    assert resp.status_code == 500
+    try:
+        with pytest.raises(RuntimeError, match="Simulated payment save failure"):
+            service.process_callback(**payload)
+    finally:
+        callback_session.close()
+        monkeypatch.setattr(PaymentRepository, "save", original_save)
 
-    refreshed_booking = db_session.query(Booking).filter(Booking.id == booking.id).first()
+    verify_session = SessionLocal()
+    persisted_payment = verify_session.query(Payment).filter(Payment.id == payment_id).first()
+    persisted_booking = verify_session.query(Booking).filter(Booking.id == booking_id).first()
+    persisted_callbacks = (
+        verify_session.query(PaymentCallback).filter(PaymentCallback.payment_id == payment_id).all()
+    )
+
+    assert persisted_payment is not None
     assert (
-        refreshed_booking.payment_status.value
-        if hasattr(refreshed_booking.payment_status, "value")
-        else str(refreshed_booking.payment_status)
+        persisted_payment.status.value
+        if hasattr(persisted_payment.status, "value")
+        else str(persisted_payment.status)
     ) == "pending"
+    assert persisted_booking is not None
+    assert (
+        persisted_booking.payment_status.value
+        if hasattr(persisted_booking.payment_status, "value")
+        else str(persisted_booking.payment_status)
+    ) == "pending"
+    assert persisted_callbacks == []
+    verify_session.close()
 
-    monkeypatch.setattr(PaymentRepository, "save", original_save)
+
+def test_payment_callback_persists_across_sessions(db_engine):
+    SessionLocal = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+
+    seed_session = SessionLocal()
+    user = User(
+        email="persist-callback@example.com",
+        username="persist_callback",
+        full_name="Persist Callback",
+        password_hash=get_password_hash("Password123"),
+        status=UserStatus.active,
+        email_verified=True,
+        phone_verified=False,
+        failed_login_count=0,
+    )
+    seed_session.add(user)
+    seed_session.flush()
+
+    airline = Airline(code="PC", name="Persist Carrier")
+    dep = Airport(code="PCA", name="Persist A", city="HCM", country="VN")
+    arr = Airport(code="PCB", name="Persist B", city="HN", country="VN")
+    seed_session.add_all([airline, dep, arr])
+    seed_session.flush()
+
+    flight = Flight(
+        airline_id=airline.id,
+        flight_number="PC100",
+        departure_airport_id=dep.id,
+        arrival_airport_id=arr.id,
+        departure_time=datetime.now(timezone.utc) + timedelta(days=1),
+        arrival_time=datetime.now(timezone.utc) + timedelta(days=1, hours=2),
+        base_price=Decimal("1000000.00"),
+        available_seats=10,
+        status="scheduled",
+    )
+    seed_session.add(flight)
+    seed_session.flush()
+
+    booking = Booking(
+        booking_code="BK-TX-PERSIST-001",
+        user_id=user.id,
+        status=BookingStatus.pending,
+        total_base_amount=Decimal("1000000.00"),
+        total_discount_amount=Decimal("0.00"),
+        total_final_amount=Decimal("1000000.00"),
+        currency="VND",
+        payment_status=PaymentStatus.pending,
+        booked_at=datetime.now(timezone.utc),
+    )
+    seed_session.add(booking)
+    seed_session.flush()
+
+    seed_session.add(
+        BookingItem(
+            booking_id=booking.id,
+            item_type=BookingItemType.flight,
+            flight_id=flight.id,
+            quantity=1,
+            unit_price=Decimal("1000000.00"),
+            total_price=Decimal("1000000.00"),
+        )
+    )
+    payment = Payment(
+        booking_id=booking.id,
+        initiated_by=user.id,
+        payment_method=PaymentMethod.vnpay,
+        status=PaymentStatus.pending,
+        amount=Decimal("1000000.00"),
+        currency="VND",
+        gateway_order_ref="PAY-PERSIST-001",
+        gateway_transaction_ref=None,
+        idempotency_key="persist-idem-001",
+        paid_at=None,
+    )
+    seed_session.add(payment)
+    seed_session.commit()
+    payment_id = payment.id
+    booking_id = booking.id
+    seed_session.close()
+
+    callback_session = SessionLocal()
+    service = PaymentCallbackService(
+        db=callback_session,
+        booking_repo=BookingRepository(callback_session),
+        payment_repo=PaymentRepository(callback_session),
+        audit_service=AuditService(AuditRepository(callback_session)),
+    )
+
+    payload = {
+        "gateway_name": "vnpay",
+        "gateway_order_ref": "PAY-PERSIST-001",
+        "gateway_transaction_ref": "TXN-PERSIST-001",
+        "amount": "1000000.00",
+        "currency": "VND",
+        "status": "paid",
+    }
+    payload["signature"] = build_payment_callback_signature(**payload)
+
+    service.process_callback(**payload)
+    callback_session.close()
+
+    verify_session = SessionLocal()
+    persisted_payment = verify_session.query(Payment).filter(Payment.id == payment_id).first()
+    persisted_booking = verify_session.query(Booking).filter(Booking.id == booking_id).first()
+    persisted_callbacks = (
+        verify_session.query(PaymentCallback).filter(PaymentCallback.payment_id == payment_id).all()
+    )
+
+    assert persisted_payment is not None
+    assert (
+        persisted_payment.status.value
+        if hasattr(persisted_payment.status, "value")
+        else str(persisted_payment.status)
+    ) == "paid"
+    assert persisted_booking is not None
+    assert (
+        persisted_booking.payment_status.value
+        if hasattr(persisted_booking.payment_status, "value")
+        else str(persisted_booking.payment_status)
+    ) == "paid"
+    assert len(persisted_callbacks) == 1
+    verify_session.close()

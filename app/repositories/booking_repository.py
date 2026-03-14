@@ -25,13 +25,18 @@ class BookingRepository:
         self.db.flush()
         return traveler
 
-    def list_by_user_id(self, user_id: str) -> list[Booking]:
+    def list_by_user_id(self, user_id: str, skip: int = 0, limit: int = 20) -> list[Booking]:
         return (
             self.db.query(Booking)
             .filter(Booking.user_id == user_id)
             .order_by(Booking.booked_at.desc())
+            .offset(skip)
+            .limit(limit)
             .all()
         )
+
+    def count_by_user_id(self, user_id: str) -> int:
+        return self.db.query(Booking).filter(Booking.user_id == user_id).count()
 
     def get_by_id(self, booking_id: str) -> Booking | None:
         return (
@@ -76,6 +81,14 @@ class BookingRepository:
                 joinedload(Booking.user),
             )
             .filter(Booking.id == booking_id, Booking.user_id == user_id)
+            .first()
+        )
+
+    def get_by_id_and_user_id_for_update(self, booking_id: str, user_id: str) -> Booking | None:
+        return (
+            self.db.query(Booking)
+            .filter(Booking.id == booking_id, Booking.user_id == user_id)
+            .with_for_update()
             .first()
         )
 

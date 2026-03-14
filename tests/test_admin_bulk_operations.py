@@ -106,6 +106,10 @@ def test_bulk_deactivate_coupons(client, db_session):
     assert body["success_count"] == 2
     assert body["failed_count"] == 0
 
+    db_session.expire_all()
+    assert db_session.query(Coupon).filter(Coupon.id == c1.id).first().is_active is False
+    assert db_session.query(Coupon).filter(Coupon.id == c2.id).first().is_active is False
+
 
 def test_bulk_close_tour_schedules(client, db_session):
     _, token = create_admin_and_login(client, db_session)
@@ -130,7 +134,7 @@ def test_bulk_close_tour_schedules(client, db_session):
         return_date=datetime.now(timezone.utc),
         capacity=10,
         available_slots=10,
-        status=TourScheduleStatus.open,
+        status=TourScheduleStatus.scheduled,
     )
     s2 = TourSchedule(
         tour_id=tour.id,
@@ -138,7 +142,7 @@ def test_bulk_close_tour_schedules(client, db_session):
         return_date=datetime.now(timezone.utc),
         capacity=8,
         available_slots=8,
-        status=TourScheduleStatus.open,
+        status=TourScheduleStatus.scheduled,
     )
     db_session.add_all([s1, s2])
     db_session.commit()
@@ -152,6 +156,12 @@ def test_bulk_close_tour_schedules(client, db_session):
     body = resp.json()
     assert body["success_count"] == 2
     assert body["failed_count"] == 0
+
+    db_session.expire_all()
+    schedule_1 = db_session.query(TourSchedule).filter(TourSchedule.id == s1.id).first()
+    schedule_2 = db_session.query(TourSchedule).filter(TourSchedule.id == s2.id).first()
+    assert schedule_1.status == TourScheduleStatus.closed
+    assert schedule_2.status == TourScheduleStatus.closed
 
 
 def test_bulk_update_refunds(client, db_session):
@@ -209,3 +219,9 @@ def test_bulk_update_refunds(client, db_session):
     body = resp.json()
     assert body["success_count"] == 2
     assert body["failed_count"] == 0
+
+    db_session.expire_all()
+    refund_1 = db_session.query(Refund).filter(Refund.id == r1.id).first()
+    refund_2 = db_session.query(Refund).filter(Refund.id == r2.id).first()
+    assert refund_1.status == RefundStatus.processed
+    assert refund_2.status == RefundStatus.processed

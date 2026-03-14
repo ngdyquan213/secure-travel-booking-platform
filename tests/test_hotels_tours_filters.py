@@ -58,8 +58,22 @@ def test_list_hotels_sort_by_star_rating_desc(client, db_session):
 
 
 def test_list_tours_filter_by_destination_and_type(client, db_session):
-    seed_tour(db_session, code="TOUR-DL-001", name="Da Lat Chill", destination="Da Lat", tour_type="domestic", status="active")
-    seed_tour(db_session, code="TOUR-BKK-001", name="Bangkok Fun", destination="Bangkok", tour_type="international", status="active")
+    seed_tour(
+        db_session,
+        code="TOUR-DL-001",
+        name="Da Lat Chill",
+        destination="Da Lat",
+        tour_type="domestic",
+        status="active",
+    )
+    seed_tour(
+        db_session,
+        code="TOUR-BKK-001",
+        name="Bangkok Fun",
+        destination="Bangkok",
+        tour_type="international",
+        status="active",
+    )
 
     resp = client.get("/api/v1/tours?destination=Da%20Lat&tour_type=domestic")
     assert resp.status_code == 200
@@ -71,8 +85,22 @@ def test_list_tours_filter_by_destination_and_type(client, db_session):
 
 
 def test_list_tours_sort_by_duration_desc(client, db_session):
-    seed_tour(db_session, code="TOUR-DUR-001", name="Short Tour", destination="Nha Trang", tour_type="domestic", status="active")
-    seed_tour(db_session, code="TOUR-DUR-002", name="Long Tour", destination="Nha Trang", tour_type="domestic", status="active")
+    seed_tour(
+        db_session,
+        code="TOUR-DUR-001",
+        name="Short Tour",
+        destination="Nha Trang",
+        tour_type="domestic",
+        status="active",
+    )
+    seed_tour(
+        db_session,
+        code="TOUR-DUR-002",
+        name="Long Tour",
+        destination="Nha Trang",
+        tour_type="domestic",
+        status="active",
+    )
 
     long_tour = db_session.query(Tour).filter(Tour.code == "TOUR-DUR-002").first()
     long_tour.duration_days = 5

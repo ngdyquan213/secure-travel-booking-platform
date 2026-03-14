@@ -5,7 +5,19 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, JSON, Numeric, String, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import INET, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,8 +26,8 @@ from app.models.enums import PaymentMethod, PaymentStatus
 
 if TYPE_CHECKING:
     from app.models.booking import Booking
-    from app.models.user import User
     from app.models.refund import Refund
+    from app.models.user import User
 
 
 class Payment(Base, TimestampMixin):
@@ -25,21 +37,30 @@ class Payment(Base, TimestampMixin):
         Index("idx_payments_status", "status"),
         Index("idx_payments_gateway_order_ref", "gateway_order_ref"),
         Index("idx_payments_idempotency_key", "idempotency_key"),
+        UniqueConstraint(
+            "booking_id",
+            "idempotency_key",
+            name="uq_payments_booking_id_idempotency_key",
+        ),
+        UniqueConstraint(
+            "gateway_order_ref",
+            name="uq_payments_gateway_order_ref",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    booking_id: Mapped[uuid.UUID] = mapped_column(
+    booking_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("bookings.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
 
     payment_method: Mapped[PaymentMethod] = mapped_column(
-        Enum(PaymentMethod, name="payment_method"),
+        Enum(PaymentMethod, name="payment_method", native_enum=False),
         nullable=False,
     )
     status: Mapped[PaymentStatus] = mapped_column(
-        Enum(PaymentStatus, name="payment_status"),
+        Enum(PaymentStatus, name="payment_status", native_enum=False),
         nullable=False,
         default=PaymentStatus.pending,
     )
@@ -58,7 +79,7 @@ class Payment(Base, TimestampMixin):
     failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    booking: Mapped[Booking] = relationship("Booking", back_populates="payments")
+    booking: Mapped[Booking | None] = relationship("Booking", back_populates="payments")
     initiated_by_user: Mapped[User | None] = relationship(
         "User",
         back_populates="initiated_payments",
@@ -96,7 +117,7 @@ class PaymentTransaction(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="VND")
     status: Mapped[PaymentStatus] = mapped_column(
-        Enum(PaymentStatus, name="payment_transaction_status"),
+        Enum(PaymentStatus, name="payment_transaction_status", native_enum=False),
         nullable=False,
     )
     raw_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -111,6 +132,14 @@ class PaymentTransaction(Base):
 
 class PaymentCallback(Base):
     __tablename__ = "payment_callbacks"
+    __table_args__ = (
+        Index(
+            "uq_payment_callbacks_gateway_name_transaction_ref",
+            "gateway_name",
+            "gateway_transaction_ref",
+            unique=True,
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     payment_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -119,6 +148,7 @@ class PaymentCallback(Base):
         nullable=True,
     )
     gateway_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    gateway_transaction_ref: Mapped[str] = mapped_column(String(255), nullable=False)
     callback_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     signature_valid: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     processed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -130,5 +160,3 @@ class PaymentCallback(Base):
     source_ip: Mapped[str | None] = mapped_column(INET, nullable=True)
 
     payment: Mapped[Payment | None] = relationship("Payment", back_populates="callbacks")
-
-    

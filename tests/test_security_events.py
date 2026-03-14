@@ -9,13 +9,9 @@ from app.models.enums import (
     BookingStatus,
     PaymentStatus,
     SecurityEventType,
-    TourScheduleStatus,
-    TourStatus,
-    TravelerType,
     UserStatus,
 )
 from app.models.flight import Airline, Airport, Flight
-from app.models.tour import Tour, TourPriceRule, TourSchedule
 from app.models.user import User
 
 
@@ -36,11 +32,7 @@ def create_user(db_session, *, email: str, username: str, password: str = "Passw
 
 
 def get_latest_security_event(db_session):
-    return (
-        db_session.query(SecurityEvent)
-        .order_by(SecurityEvent.detected_at.desc())
-        .first()
-    )
+    return db_session.query(SecurityEvent).order_by(SecurityEvent.detected_at.desc()).first()
 
 
 def seed_flight_booking_for_payment(db_session, user_id: str):

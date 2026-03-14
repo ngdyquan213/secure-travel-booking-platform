@@ -12,6 +12,22 @@ from app.core.redis import redis_client
 logger = logging.getLogger("app.startup")
 
 
+def redact_connection_url(raw_url: str) -> str:
+    if "://" not in raw_url or "@" not in raw_url:
+        return raw_url
+
+    scheme, remainder = raw_url.split("://", 1)
+    credentials, host_part = remainder.rsplit("@", 1)
+    username, separator, _password = credentials.partition(":")
+
+    if separator:
+        redacted_credentials = f"{username}:***" if username else ":***"
+    else:
+        redacted_credentials = "***"
+
+    return f"{scheme}://{redacted_credentials}@{host_part}"
+
+
 def ensure_local_directories() -> None:
     Path(settings.LOCAL_UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     logger.info(
@@ -47,12 +63,13 @@ def check_redis_connection() -> None:
 
 def log_startup_summary() -> None:
     logger.info(
-        "startup_summary | app_name=%s environment=%s debug=%s database_url=%s redis_url=%s upload_dir=%s",
+        "startup_summary | app_name=%s environment=%s debug=%s "
+        "database_url=%s redis_url=%s upload_dir=%s",
         settings.APP_NAME,
         settings.ENVIRONMENT,
         settings.DEBUG,
-        settings.DATABASE_URL,
-        settings.REDIS_URL,
+        redact_connection_url(settings.DATABASE_URL),
+        redact_connection_url(settings.REDIS_URL),
         settings.LOCAL_UPLOAD_DIR,
     )
 

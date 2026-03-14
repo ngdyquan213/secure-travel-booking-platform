@@ -15,6 +15,7 @@ from app.schemas.booking import BookingCancelRequest
 from app.services.audit_service import AuditService
 from app.services.booking_inventory_service import BookingInventoryService
 from app.services.booking_refund_service import BookingRefundService
+from app.utils.enums import enum_to_str
 from app.workers.email_worker import EmailWorker
 
 
@@ -48,9 +49,7 @@ class BookingCancellationService:
         if current_status == BookingStatus.cancelled.value:
             raise ConflictAppException("Booking already cancelled")
 
-        disallowed = {
-            BookingStatus.completed.value,
-        }
+        disallowed = set()
         if current_status in disallowed:
             raise ConflictAppException(f"Booking cannot be cancelled from status: {current_status}")
 
@@ -67,14 +66,14 @@ class BookingCancellationService:
         if not booking:
             raise NotFoundAppException("Booking not found")
 
-        booking_status = booking.status.value if hasattr(booking.status, "value") else str(booking.status)
+        booking_status = enum_to_str(booking.status)
         self._assert_booking_can_be_cancelled(booking_status)
 
         payment = self.payment_repo.get_latest_by_booking_id(str(booking.id))
         refund = None
         refund_amount = 0
 
-        with self.db.begin():
+        with self.db.begin_nested():
             self.inventory_service.restore_inventory(booking)
 
             booking.status = BookingStatus.cancelled
@@ -82,10 +81,12 @@ class BookingCancellationService:
             booking.cancellation_reason = payload.reason
             self.booking_repo.save(booking)
 
-            payment, refund, refund_amount = self.refund_service.process_cancellation_payment_effects(
-                booking=booking,
-                payment=payment,
-                reason=payload.reason,
+            payment, refund, refund_amount = (
+                self.refund_service.process_cancellation_payment_effects(
+                    booking=booking,
+                    payment=payment,
+                    reason=payload.reason,
+                )
             )
             self.booking_repo.save(booking)
 
@@ -103,6 +104,12 @@ class BookingCancellationService:
                     "reason": payload.reason,
                 },
             )
+
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
         self.db.refresh(booking)
         if payment:

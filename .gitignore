@@ -9,3 +9,4 @@ uploads/
 alembic/versions/__pycache__/
 .venv
 .env.*
+!.env.staging.example

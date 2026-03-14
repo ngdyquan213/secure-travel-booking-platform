@@ -101,6 +101,8 @@ def test_generate_booking_voucher_document(client, db_session):
     assert body["booking_id"] == booking["id"]
     assert body["document_type"] == "voucher"
     assert body["mime_type"] == "application/pdf"
+    assert "storage_key" not in body
+    assert "stored_filename" not in body
 
     docs_resp = client.get(
         "/api/v1/uploads/documents",

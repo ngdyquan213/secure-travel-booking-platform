@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import NotFoundAppException, ValidationAppException
 from app.models.booking import Booking, BookingItem
 from app.models.enums import (
     BookingItemType,
@@ -50,23 +51,23 @@ class TourBookingService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> Booking:
-        with self.db.begin():
+        with self.db.begin_nested():
             schedule = self.tour_repo.get_schedule_by_id_for_update(payload.tour_schedule_id)
             if not schedule:
-                raise ValueError("Tour schedule not found")
+                raise NotFoundAppException("Tour schedule not found")
 
             if schedule.status != TourScheduleStatus.scheduled:
-                raise ValueError("Tour schedule is not bookable")
+                raise ValidationAppException("Tour schedule is not bookable")
 
             total_travelers = payload.adult_count + payload.child_count + payload.infant_count
             if schedule.available_slots < total_travelers:
-                raise ValueError("Not enough available slots")
+                raise ValidationAppException("Not enough available slots")
 
             price_map = {rule.traveler_type: Decimal(rule.price) for rule in schedule.price_rules}
 
             adult_price = price_map.get(TravelerType.adult)
             if adult_price is None:
-                raise ValueError("Adult pricing is missing for this tour schedule")
+                raise ValidationAppException("Adult pricing is missing for this tour schedule")
 
             child_price = price_map.get(TravelerType.child, Decimal("0.00"))
             infant_price = price_map.get(TravelerType.infant, Decimal("0.00"))
@@ -130,6 +131,12 @@ class TourBookingService:
                     "total_price": str(total_price),
                 },
             )
+
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
         self.db.refresh(booking)
 

@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import NotFoundAppException, ValidationAppException
 from app.models.booking import Booking, BookingItem
 from app.models.enums import BookingItemType, BookingStatus, LogActorType, PaymentStatus
 from app.repositories.booking_repository import BookingRepository
@@ -27,6 +28,11 @@ class HotelBookingService:
         self.hotel_repo = hotel_repo
         self.audit_service = audit_service
 
+    @staticmethod
+    def _validate_inventory(rows, *, quantity: int) -> None:
+        if any(row.available_rooms < quantity for row in rows):
+            raise ValidationAppException("Not enough available rooms for the selected dates")
+
     def create_hotel_booking(
         self,
         *,
@@ -35,17 +41,21 @@ class HotelBookingService:
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> Booking:
-        with self.db.begin():
+        with self.db.begin_nested():
             room = self.hotel_repo.get_room_by_id_for_update(payload.hotel_room_id)
             if not room:
-                raise ValueError("Hotel room not found")
+                raise NotFoundAppException("Hotel room not found")
 
             nights = (payload.check_out_date - payload.check_in_date).days
             if nights <= 0:
-                raise ValueError("Invalid stay duration")
+                raise ValidationAppException("Invalid stay duration")
 
-            if room.total_rooms < payload.quantity:
-                raise ValueError("Not enough available rooms")
+            inventory_rows = self.hotel_repo.ensure_room_inventory_rows(
+                room=room,
+                check_in_date=payload.check_in_date,
+                check_out_date=payload.check_out_date,
+            )
+            self._validate_inventory(inventory_rows, quantity=payload.quantity)
 
             unit_price = Decimal(room.base_price_per_night)
             total_price = unit_price * payload.quantity * nights
@@ -79,8 +89,9 @@ class HotelBookingService:
             )
             self.booking_repo.add_booking_item(item)
 
-            room.total_rooms -= payload.quantity
-            self.hotel_repo.save_room(room)
+            for inventory in inventory_rows:
+                inventory.available_rooms -= payload.quantity
+                self.hotel_repo.save_room_inventory(inventory)
 
             self.audit_service.log_action(
                 actor_type=LogActorType.user,
@@ -99,6 +110,12 @@ class HotelBookingService:
                     "check_out_date": payload.check_out_date.isoformat(),
                 },
             )
+
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
         self.db.refresh(booking)
         return booking

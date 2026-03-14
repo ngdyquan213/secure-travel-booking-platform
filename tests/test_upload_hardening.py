@@ -1,11 +1,17 @@
+import hashlib
+from datetime import datetime, timezone
 from io import BytesIO
+from pathlib import Path
 
 from app.core.security import get_password_hash
+from app.models.document import UploadedDocument
 from app.models.enums import UserStatus
 from app.models.user import User
 
 
-def create_user_and_login(client, db_session, *, email: str, username: str, password: str = "Password123"):
+def create_user_and_login(
+    client, db_session, *, email: str, username: str, password: str = "Password123"
+):
     user = User(
         email=email,
         username=username,
@@ -53,7 +59,7 @@ def test_upload_rejects_empty_file(client, db_session, monkeypatch, tmp_path):
     assert body["message"] == "Uploaded file is empty"
 
 
-def test_upload_rejects_file_too_large(client, db_session, monkeypatch, tmp_path):
+def test_upload_rejects_file_too_large(client, db_session, monkeypatch, tmp_path, sample_pdf_bytes):
     from app.core import config as config_module
 
     monkeypatch.setattr(config_module.settings, "LOCAL_UPLOAD_DIR", str(tmp_path))
@@ -69,7 +75,7 @@ def test_upload_rejects_file_too_large(client, db_session, monkeypatch, tmp_path
     resp = client.post(
         "/api/v1/uploads/documents",
         headers={"Authorization": f"Bearer {token}"},
-        files={"file": ("large.pdf", BytesIO(b"0123456789ABCDEF"), "application/pdf")},
+        files={"file": ("large.pdf", BytesIO(sample_pdf_bytes), "application/pdf")},
         data={"document_type": "passport"},
     )
 
@@ -129,7 +135,34 @@ def test_upload_rejects_invalid_mime_type(client, db_session, monkeypatch, tmp_p
     assert body["message"] == "File MIME type is not allowed"
 
 
-def test_upload_accepts_valid_file(client, db_session, monkeypatch, tmp_path):
+def test_upload_rejects_mismatched_file_signature(
+    client, db_session, monkeypatch, tmp_path
+):
+    from app.core import config as config_module
+
+    monkeypatch.setattr(config_module.settings, "LOCAL_UPLOAD_DIR", str(tmp_path))
+
+    _, token = create_user_and_login(
+        client,
+        db_session,
+        email="upload-signature@example.com",
+        username="upload_signature",
+    )
+
+    resp = client.post(
+        "/api/v1/uploads/documents",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("file.pdf", BytesIO(b"not-a-real-pdf"), "application/pdf")},
+        data={"document_type": "passport"},
+    )
+
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["message"] == "File content does not match declared MIME type"
+
+
+def test_upload_accepts_valid_file(client, db_session, monkeypatch, tmp_path, sample_pdf_bytes):
     from app.core import config as config_module
 
     monkeypatch.setattr(config_module.settings, "LOCAL_UPLOAD_DIR", str(tmp_path))
@@ -142,7 +175,7 @@ def test_upload_accepts_valid_file(client, db_session, monkeypatch, tmp_path):
         username="upload_ok",
     )
 
-    content = b"%PDF-1.4 test content"
+    content = sample_pdf_bytes
 
     resp = client.post(
         "/api/v1/uploads/documents",
@@ -159,6 +192,82 @@ def test_upload_accepts_valid_file(client, db_session, monkeypatch, tmp_path):
     assert body["mime_type"] == "application/pdf"
     assert body["file_size"] == len(content)
     assert body["storage_bucket"] == "local"
+    assert "storage_key" not in body
+    assert "stored_filename" not in body
 
-    stored_path = body["storage_key"]
-    assert stored_path
+
+def test_upload_persists_absolute_path_and_checksum(
+    client, db_session, monkeypatch, tmp_path, sample_pdf_bytes
+):
+    from app.core import config as config_module
+
+    monkeypatch.setattr(config_module.settings, "LOCAL_UPLOAD_DIR", str(tmp_path))
+
+    user, token = create_user_and_login(
+        client,
+        db_session,
+        email="upload-meta@example.com",
+        username="upload_meta",
+    )
+
+    resp = client.post(
+        "/api/v1/uploads/documents",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("passport.pdf", BytesIO(sample_pdf_bytes), "application/pdf")},
+        data={"document_type": "passport"},
+    )
+
+    assert resp.status_code == 201
+
+    document = (
+        db_session.query(UploadedDocument)
+        .filter(UploadedDocument.user_id == user.id)
+        .order_by(UploadedDocument.uploaded_at.desc())
+        .first()
+    )
+    assert document is not None
+    assert Path(document.storage_key).is_absolute()
+    assert Path(document.storage_key).parent == tmp_path.resolve()
+    assert document.checksum_sha256 == hashlib.sha256(sample_pdf_bytes).hexdigest()
+
+
+def test_list_documents_excludes_soft_deleted_records(
+    client, db_session, monkeypatch, tmp_path, sample_pdf_bytes
+):
+    from app.core import config as config_module
+
+    monkeypatch.setattr(config_module.settings, "LOCAL_UPLOAD_DIR", str(tmp_path))
+
+    user, token = create_user_and_login(
+        client,
+        db_session,
+        email="upload-soft-delete@example.com",
+        username="upload_soft_delete",
+    )
+
+    resp = client.post(
+        "/api/v1/uploads/documents",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("passport.pdf", BytesIO(sample_pdf_bytes), "application/pdf")},
+        data={"document_type": "passport"},
+    )
+    assert resp.status_code == 201
+
+    document = (
+        db_session.query(UploadedDocument)
+        .filter(UploadedDocument.user_id == user.id)
+        .order_by(UploadedDocument.uploaded_at.desc())
+        .first()
+    )
+    assert document is not None
+
+    document.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+
+    list_resp = client.get(
+        "/api/v1/uploads/documents",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert list_resp.status_code == 200
+    assert list_resp.json() == []

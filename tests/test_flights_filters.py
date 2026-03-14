@@ -4,7 +4,16 @@ from decimal import Decimal
 from app.models.flight import Airline, Airport, Flight
 
 
-def seed_flight(db_session, *, code_suffix: str, dep_code: str, arr_code: str, price: str, seats: int, status: str):
+def seed_flight(
+    db_session,
+    *,
+    code_suffix: str,
+    dep_code: str,
+    arr_code: str,
+    price: str,
+    seats: int,
+    status: str,
+):
     airline = Airline(code=f"AL{code_suffix}", name=f"Airline {code_suffix}")
     dep = db_session.query(Airport).filter(Airport.code == dep_code).first()
     if not dep:
@@ -36,8 +45,24 @@ def seed_flight(db_session, *, code_suffix: str, dep_code: str, arr_code: str, p
 
 
 def test_list_flights_filter_by_departure_and_arrival(client, db_session):
-    seed_flight(db_session, code_suffix="101", dep_code="SGN", arr_code="HAN", price="1000000.00", seats=10, status="scheduled")
-    seed_flight(db_session, code_suffix="102", dep_code="DAD", arr_code="HAN", price="1100000.00", seats=8, status="scheduled")
+    seed_flight(
+        db_session,
+        code_suffix="101",
+        dep_code="SGN",
+        arr_code="HAN",
+        price="1000000.00",
+        seats=10,
+        status="scheduled",
+    )
+    seed_flight(
+        db_session,
+        code_suffix="102",
+        dep_code="DAD",
+        arr_code="HAN",
+        price="1100000.00",
+        seats=8,
+        status="scheduled",
+    )
 
     resp = client.get("/api/v1/flights?departure_airport_code=SGN&arrival_airport_code=HAN")
     assert resp.status_code == 200
@@ -48,8 +73,24 @@ def test_list_flights_filter_by_departure_and_arrival(client, db_session):
 
 
 def test_list_flights_filter_by_status(client, db_session):
-    seed_flight(db_session, code_suffix="201", dep_code="SGN", arr_code="HUI", price="900000.00", seats=4, status="scheduled")
-    seed_flight(db_session, code_suffix="202", dep_code="SGN", arr_code="PQC", price="950000.00", seats=3, status="cancelled")
+    seed_flight(
+        db_session,
+        code_suffix="201",
+        dep_code="SGN",
+        arr_code="HUI",
+        price="900000.00",
+        seats=4,
+        status="scheduled",
+    )
+    seed_flight(
+        db_session,
+        code_suffix="202",
+        dep_code="SGN",
+        arr_code="PQC",
+        price="950000.00",
+        seats=3,
+        status="cancelled",
+    )
 
     resp = client.get("/api/v1/flights?status=cancelled")
     assert resp.status_code == 200
@@ -60,8 +101,24 @@ def test_list_flights_filter_by_status(client, db_session):
 
 
 def test_list_flights_sort_by_price_desc(client, db_session):
-    seed_flight(db_session, code_suffix="301", dep_code="SGN", arr_code="CXR", price="700000.00", seats=5, status="scheduled")
-    seed_flight(db_session, code_suffix="302", dep_code="SGN", arr_code="VCA", price="1400000.00", seats=5, status="scheduled")
+    seed_flight(
+        db_session,
+        code_suffix="301",
+        dep_code="SGN",
+        arr_code="CXR",
+        price="700000.00",
+        seats=5,
+        status="scheduled",
+    )
+    seed_flight(
+        db_session,
+        code_suffix="302",
+        dep_code="SGN",
+        arr_code="VCA",
+        price="1400000.00",
+        seats=5,
+        status="scheduled",
+    )
 
     resp = client.get("/api/v1/flights?sort_by=base_price&sort_order=desc")
     assert resp.status_code == 200

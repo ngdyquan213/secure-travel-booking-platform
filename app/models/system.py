@@ -31,4 +31,6 @@ class AppSetting(Base):
         nullable=True,
     )
 
-    updated_by_user: Mapped[User | None] = relationship("User", back_populates="updated_app_settings")
+    updated_by_user: Mapped[User | None] = relationship(
+        "User", back_populates="updated_app_settings"
+    )

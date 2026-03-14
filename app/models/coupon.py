@@ -5,7 +5,17 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,18 +35,20 @@ class Coupon(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     coupon_type: Mapped[CouponType] = mapped_column(
-        Enum(CouponType, name="coupon_type"),
+        Enum(CouponType, name="coupon_type", native_enum=False),
         nullable=False,
     )
     applicable_product_type: Mapped[CouponApplicableProductType] = mapped_column(
-        Enum(CouponApplicableProductType, name="coupon_applicable_product_type"),
+        Enum(CouponApplicableProductType, name="coupon_applicable_product_type", native_enum=False),
         nullable=False,
         default=CouponApplicableProductType.all,
     )
 
     discount_value: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     max_discount_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
-    min_booking_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+    min_booking_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
 
     usage_limit_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
     usage_limit_per_user: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -63,6 +75,13 @@ class Coupon(Base, TimestampMixin):
 
 class CouponUsage(Base):
     __tablename__ = "coupon_usages"
+    __table_args__ = (
+        UniqueConstraint(
+            "coupon_id",
+            "booking_id",
+            name="uq_coupon_usages_coupon_id_booking_id",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     coupon_id: Mapped[uuid.UUID] = mapped_column(

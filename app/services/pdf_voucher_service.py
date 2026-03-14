@@ -9,6 +9,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.models.enums import BookingItemType
+from app.utils.enums import enum_to_str
 
 
 class PDFVoucherService:
@@ -53,10 +54,20 @@ class PDFVoucherService:
 
     def _build_info_table(self, booking) -> Table:
         data = [
-            ["Booking Code", booking.booking_code, "Booking Status", booking.status.value if hasattr(booking.status, "value") else str(booking.status)],
-            ["Payment Status", booking.payment_status.value if hasattr(booking.payment_status, "value") else str(booking.payment_status), "Currency", booking.currency],
-            ["Booked At", str(booking.booked_at), "Customer", booking.user.full_name if booking.user else "Unknown"],
-            ["Customer Email", booking.user.email if booking.user else "Unknown", "Notes", booking.notes or "-"],
+            ["Booking Code", booking.booking_code, "Booking Status", enum_to_str(booking.status)],
+            ["Payment Status", enum_to_str(booking.payment_status), "Currency", booking.currency],
+            [
+                "Booked At",
+                str(booking.booked_at),
+                "Customer",
+                booking.user.full_name if booking.user else "Unknown",
+            ],
+            [
+                "Customer Email",
+                booking.user.email if booking.user else "Unknown",
+                "Notes",
+                booking.notes or "-",
+            ],
         ]
 
         table = Table(data, colWidths=[30 * mm, 55 * mm, 30 * mm, 55 * mm])
@@ -81,7 +92,7 @@ class PDFVoucherService:
         return table
 
     def _item_title_desc(self, item) -> tuple[str, str]:
-        item_type = item.item_type.value if hasattr(item.item_type, "value") else str(item.item_type)
+        item_type = enum_to_str(item.item_type)
 
         if item_type == BookingItemType.flight.value and item.flight is not None:
             dep = item.flight.departure_airport.code if item.flight.departure_airport else "-"
@@ -95,14 +106,19 @@ class PDFVoucherService:
             hotel_name = item.hotel_room.hotel.name if item.hotel_room.hotel else "Hotel"
             return (
                 f"{hotel_name} - {item.hotel_room.room_type}",
-                f"Stay: {item.check_in_date} -> {item.check_out_date}" if item.check_in_date and item.check_out_date else "Hotel booking",
+                f"Stay: {item.check_in_date} -> {item.check_out_date}"
+                if item.check_in_date and item.check_out_date
+                else "Hotel booking",
             )
 
         if item_type == BookingItemType.tour.value and item.tour_schedule is not None:
             tour_name = item.tour_schedule.tour.name if item.tour_schedule.tour else "Tour"
             return (
                 tour_name,
-                f"Travel date: {item.tour_schedule.departure_date} -> {item.tour_schedule.return_date}",
+                (
+                    f"Travel date: {item.tour_schedule.departure_date} -> "
+                    f"{item.tour_schedule.return_date}"
+                ),
             )
 
         return ("Booking Item", "Travel service")
@@ -111,7 +127,7 @@ class PDFVoucherService:
         data = [["Type", "Title", "Description", "Qty", "Unit Price", "Total"]]
 
         for item in booking.items:
-            item_type = item.item_type.value if hasattr(item.item_type, "value") else str(item.item_type)
+            item_type = enum_to_str(item.item_type)
             title, desc = self._item_title_desc(item)
             data.append(
                 [
@@ -158,10 +174,10 @@ class PDFVoucherService:
             data.append(
                 [
                     traveler.full_name,
-                    traveler.traveler_type.value if hasattr(traveler.traveler_type, "value") else str(traveler.traveler_type),
+                    enum_to_str(traveler.traveler_type),
                     traveler.passport_number or "-",
                     traveler.nationality or "-",
-                    traveler.document_type.value if traveler.document_type and hasattr(traveler.document_type, "value") else (str(traveler.document_type) if traveler.document_type else "-"),
+                    enum_to_str(traveler.document_type) or "-",
                 ]
             )
 
@@ -257,7 +273,8 @@ class PDFVoucherService:
 
         story.append(
             Paragraph(
-                "Please keep this voucher for check-in, boarding, hotel verification, or tour confirmation where applicable.",
+                "Please keep this voucher for check-in, boarding, hotel verification, "
+                "or tour confirmation where applicable.",
                 self.body_style,
             )
         )

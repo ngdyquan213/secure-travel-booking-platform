@@ -1,5 +1,5 @@
-from io import BytesIO
 from datetime import date, timedelta
+from io import BytesIO
 
 from app.core.security import get_password_hash
 from app.models.enums import TourScheduleStatus, TourStatus, TravelerType, UserStatus
@@ -106,7 +106,7 @@ def create_booking_and_traveler(client, token: str, schedule_id: str):
     return booking, traveler
 
 
-def test_upload_document_for_owned_traveler_success(client, db_session):
+def test_upload_document_for_owned_traveler_success(client, db_session, sample_pdf_bytes):
     _, token = create_user_and_login(client, db_session, "travdoc1@example.com", "travdoc1")
     schedule = seed_tour_schedule(db_session)
     booking, traveler = create_booking_and_traveler(client, token, str(schedule.id))
@@ -114,7 +114,7 @@ def test_upload_document_for_owned_traveler_success(client, db_session):
     resp = client.post(
         "/api/v1/uploads/documents",
         headers={"Authorization": f"Bearer {token}"},
-        files={"file": ("passport.pdf", BytesIO(b"pdf-content"), "application/pdf")},
+        files={"file": ("passport.pdf", BytesIO(sample_pdf_bytes), "application/pdf")},
         data={
             "document_type": "passport",
             "booking_id": booking["id"],
@@ -129,7 +129,7 @@ def test_upload_document_for_owned_traveler_success(client, db_session):
     assert body["document_type"] == "passport"
 
 
-def test_upload_document_rejects_foreign_traveler(client, db_session):
+def test_upload_document_rejects_foreign_traveler(client, db_session, sample_pdf_bytes):
     _, token1 = create_user_and_login(client, db_session, "travdoc2a@example.com", "travdoc2a")
     _, token2 = create_user_and_login(client, db_session, "travdoc2b@example.com", "travdoc2b")
 
@@ -139,7 +139,7 @@ def test_upload_document_rejects_foreign_traveler(client, db_session):
     resp = client.post(
         "/api/v1/uploads/documents",
         headers={"Authorization": f"Bearer {token2}"},
-        files={"file": ("passport.pdf", BytesIO(b"pdf-content"), "application/pdf")},
+        files={"file": ("passport.pdf", BytesIO(sample_pdf_bytes), "application/pdf")},
         data={
             "document_type": "passport",
             "traveler_id": traveler["id"],

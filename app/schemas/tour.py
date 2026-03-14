@@ -3,10 +3,12 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
+from app.models.enums import TourScheduleStatus, TourStatus, TravelerType
+
 
 class TourPriceRuleResponse(BaseModel):
     id: str
-    traveler_type: str
+    traveler_type: TravelerType
     price: Decimal
     currency: str
 
@@ -17,7 +19,7 @@ class TourScheduleResponse(BaseModel):
     return_date: date
     capacity: int
     available_slots: int
-    status: str
+    status: TourScheduleStatus
     price_rules: list[TourPriceRuleResponse] = []
 
 
@@ -45,7 +47,7 @@ class TourResponse(BaseModel):
     duration_nights: int
     meeting_point: str | None = None
     tour_type: str | None = None
-    status: str
+    status: TourStatus
     schedules: list[TourScheduleResponse] = []
     itineraries: list[TourItineraryResponse] = []
     policies: list[TourPolicyResponse] = []

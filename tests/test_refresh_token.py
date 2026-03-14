@@ -1,7 +1,3 @@
-from app.core.security import hash_refresh_token
-from app.models.user import RefreshToken
-
-
 def test_login_returns_refresh_token(client, db_session):
     register_resp = client.post(
         "/api/v1/auth/register",
@@ -57,7 +53,8 @@ def test_refresh_returns_new_access_token(client, db_session):
     assert refresh_resp.status_code == 200
     body = refresh_resp.json()
     assert "access_token" in body
-    assert body["refresh_token"] == refresh_token
+    assert "refresh_token" in body
+    assert body["refresh_token"] != refresh_token
 
 
 def test_logout_revokes_refresh_token(client, db_session):

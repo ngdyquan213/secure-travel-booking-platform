@@ -3,19 +3,21 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
+from app.models.enums import BookingStatus, LogActorType, PaymentStatus, RefundStatus
+
 
 class BookingStatusCountItem(BaseModel):
-    status: str
+    status: BookingStatus
     count: int
 
 
 class PaymentStatusCountItem(BaseModel):
-    status: str
+    status: PaymentStatus
     count: int
 
 
 class RefundStatusCountItem(BaseModel):
-    status: str
+    status: RefundStatus
     count: int
 
 
@@ -28,7 +30,7 @@ class RevenueSummaryResponse(BaseModel):
 
 class RecentActivityItem(BaseModel):
     audit_log_id: str
-    actor_type: str
+    actor_type: LogActorType
     actor_user_id: str | None
     action: str
     resource_type: str | None

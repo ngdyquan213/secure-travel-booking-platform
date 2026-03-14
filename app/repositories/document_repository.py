@@ -13,10 +13,15 @@ class DocumentRepository:
         self.db.flush()
         return document
 
-    def list_by_user_id(self, user_id: str, skip: int = 0, limit: int = 20) -> list[UploadedDocument]:
+    def list_by_user_id(
+        self, user_id: str, skip: int = 0, limit: int = 20
+    ) -> list[UploadedDocument]:
         return (
             self.db.query(UploadedDocument)
-            .filter(UploadedDocument.user_id == user_id)
+            .filter(
+                UploadedDocument.user_id == user_id,
+                UploadedDocument.deleted_at.is_(None),
+            )
             .order_by(UploadedDocument.uploaded_at.desc())
             .offset(skip)
             .limit(limit)
@@ -24,18 +29,10 @@ class DocumentRepository:
         )
 
     def count_by_user_id(self, user_id: str) -> int:
-        return (
-            self.db.query(UploadedDocument)
-            .filter(UploadedDocument.user_id == user_id)
-            .count()
-        )
+        return self.db.query(UploadedDocument).filter(UploadedDocument.user_id == user_id).count()
 
     def get_by_id(self, document_id: str) -> UploadedDocument | None:
-        return (
-            self.db.query(UploadedDocument)
-            .filter(UploadedDocument.id == document_id)
-            .first()
-        )
+        return self.db.query(UploadedDocument).filter(UploadedDocument.id == document_id).first()
 
     def get_by_id_and_user_id(self, document_id: str, user_id: str) -> UploadedDocument | None:
         return (

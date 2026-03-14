@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, JSON, String, Text, func
+from sqlalchemy import JSON, CheckConstraint, DateTime, Enum, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import INET, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,7 +25,7 @@ class AuditLog(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     actor_type: Mapped[LogActorType] = mapped_column(
-        Enum(LogActorType, name="log_actor_type"),
+        Enum(LogActorType, name="log_actor_type", native_enum=False),
         nullable=False,
     )
     actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -63,7 +63,7 @@ class SecurityEvent(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     event_type: Mapped[SecurityEventType] = mapped_column(
-        Enum(SecurityEventType, name="security_event_type"),
+        Enum(SecurityEventType, name="security_event_type", native_enum=False),
         nullable=False,
     )
     severity: Mapped[str] = mapped_column(String(20), nullable=False)

@@ -26,10 +26,10 @@ def create_user_and_token(client, db_session):
     return user, resp.json()["access_token"]
 
 
-def test_upload_document_success(client, db_session):
+def test_upload_document_success(client, db_session, sample_pdf_bytes):
     _, token = create_user_and_token(client, db_session)
 
-    file_content = BytesIO(b"dummy pdf content")
+    file_content = BytesIO(sample_pdf_bytes)
     resp = client.post(
         "/api/v1/uploads/documents",
         headers={"Authorization": f"Bearer {token}"},
@@ -39,3 +39,6 @@ def test_upload_document_success(client, db_session):
     assert resp.status_code == 201
     body = resp.json()
     assert body["document_type"] == "passport"
+    assert body["file_size"] == len(sample_pdf_bytes)
+    assert "storage_key" not in body
+    assert "stored_filename" not in body

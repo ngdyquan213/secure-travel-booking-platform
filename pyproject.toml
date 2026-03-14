@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "secure-travel-booking-platform"
 version = "0.1.0"
@@ -8,17 +12,28 @@ dependencies = [
   "uvicorn",
   "sqlalchemy",
   "alembic",
+  "alembic-postgresql-enum",
   "psycopg2-binary",
-  "python-jose",
+  "PyJWT>=2.10.0",
   "passlib[bcrypt]",
   "pydantic-settings",
   "email-validator",
   "python-multipart",
   "httpx",
-  "pytest",
   "reportlab",
   "redis",
 ]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+  "bandit",
+  "pip-audit",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
 
 [tool.ruff]
 line-length = 100
@@ -26,7 +41,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
-ignore = []
+ignore = ["B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

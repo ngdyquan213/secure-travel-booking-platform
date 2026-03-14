@@ -1,3 +1,18 @@
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+
+from sqlalchemy.orm import sessionmaker
+
+from app.core.security import get_password_hash
+from app.models.enums import UserStatus
+from app.models.user import User
+from app.repositories.audit_repository import AuditRepository
+from app.repositories.user_repository import UserRepository
+from app.schemas.auth import LoginRequest
+from app.services.audit_service import AuditService
+from app.services.auth_service import AuthService
+
+
 def test_refresh_token_rotation_returns_new_refresh_token(client, db_session):
     client.post(
         "/api/v1/auth/register",
@@ -102,3 +117,59 @@ def test_new_refresh_token_can_continue_session_after_rotation(client, db_sessio
     refresh_token_3 = refresh_resp_2.json()["refresh_token"]
 
     assert refresh_token_3 != refresh_token_2
+
+
+def test_refresh_token_rotation_is_single_use_under_concurrency(db_engine):
+    SessionLocal = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+
+    seed_session = SessionLocal()
+    service = AuthService(
+        db=seed_session,
+        user_repo=UserRepository(seed_session),
+        audit_service=AuditService(AuditRepository(seed_session)),
+    )
+    payload = LoginRequest(email="rotation-concurrent@example.com", password="Password123")
+
+    user = User(
+        email=payload.email,
+        username="rotation_concurrent",
+        full_name="Rotation Concurrent",
+        password_hash=get_password_hash(payload.password),
+        status=UserStatus.active,
+        email_verified=True,
+        phone_verified=False,
+        failed_login_count=0,
+    )
+    seed_session.add(user)
+    seed_session.commit()
+
+    _, _, refresh_token = service.login(payload=payload)
+    seed_session.close()
+
+    def rotate_once() -> tuple[str, str | None]:
+        session = SessionLocal()
+        service = AuthService(
+            db=session,
+            user_repo=UserRepository(session),
+            audit_service=AuditService(AuditRepository(session)),
+        )
+
+        try:
+            _user, _access_token, new_refresh_token = service.refresh_access_token(
+                refresh_token=refresh_token
+            )
+            return "success", new_refresh_token
+        except Exception as exc:
+            return "error", str(exc)
+        finally:
+            session.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _unused: rotate_once(), range(2)))
+
+    statuses = Counter(status for status, _value in results)
+    assert statuses["success"] == 1
+    assert statuses["error"] == 1
+    assert any(
+        value == "Refresh token has been revoked" for status, value in results if status == "error"
+    )

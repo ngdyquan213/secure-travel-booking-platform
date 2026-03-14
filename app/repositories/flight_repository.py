@@ -18,13 +18,10 @@ class FlightRepository:
         sort_by: str = "departure_time",
         sort_order: str = "asc",
     ) -> list[Flight]:
-        query = (
-            self.db.query(Flight)
-            .options(
-                joinedload(Flight.airline),
-                joinedload(Flight.departure_airport),
-                joinedload(Flight.arrival_airport),
-            )
+        query = self.db.query(Flight).options(
+            joinedload(Flight.airline),
+            joinedload(Flight.departure_airport),
+            joinedload(Flight.arrival_airport),
         )
 
         if departure_airport_code:
@@ -33,9 +30,7 @@ class FlightRepository:
             )
 
         if arrival_airport_code:
-            query = query.filter(
-                Flight.arrival_airport.has(code=arrival_airport_code.upper())
-            )
+            query = query.filter(Flight.arrival_airport.has(code=arrival_airport_code.upper()))
 
         if status:
             query = query.filter(Flight.status == status)
@@ -60,14 +55,10 @@ class FlightRepository:
         query = self.db.query(Flight)
 
         if departure_airport_code:
-            query = query.filter(
-                Flight.departure_airport.has(code=departure_airport_code.upper())
-            )
+            query = query.filter(Flight.departure_airport.has(code=departure_airport_code.upper()))
 
         if arrival_airport_code:
-            query = query.filter(
-                Flight.arrival_airport.has(code=arrival_airport_code.upper())
-            )
+            query = query.filter(Flight.arrival_airport.has(code=arrival_airport_code.upper()))
 
         if status:
             query = query.filter(Flight.status == status)
@@ -87,12 +78,7 @@ class FlightRepository:
         )
 
     def get_by_id_for_update(self, flight_id: str) -> Flight | None:
-        return (
-            self.db.query(Flight)
-            .filter(Flight.id == flight_id)
-            .with_for_update()
-            .first()
-        )
+        return self.db.query(Flight).filter(Flight.id == flight_id).with_for_update().first()
 
     def save(self, flight: Flight) -> Flight:
         self.db.add(flight)

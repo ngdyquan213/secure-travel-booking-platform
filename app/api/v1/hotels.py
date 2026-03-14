@@ -1,21 +1,28 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_pagination_params
+from app.api.deps import build_hotel_service, get_pagination_params
 from app.core.database import get_db
-from app.models.enums import LogActorType
-from app.repositories.audit_repository import AuditRepository
-from app.repositories.hotel_repository import HotelRepository
+from app.core.exceptions import ValidationAppException
 from app.schemas.common import PaginatedResponse
-from app.schemas.hotel import HotelResponse, HotelRoomResponse
-from app.services.audit_service import AuditService
-from app.services.hotel_service import HotelService
+from app.schemas.hotel import HotelResponse
 from app.utils.pagination import PaginationParams, build_paginated_response
+from app.utils.request_context import get_client_ip, get_user_agent
+from app.utils.response_mappers import hotel_to_dict
 
 router = APIRouter(prefix="/hotels", tags=["hotels"])
 
 
-@router.get("", response_model=PaginatedResponse)
+def _validate_stay_dates(check_in_date: date | None, check_out_date: date | None) -> None:
+    if (check_in_date is None) != (check_out_date is None):
+        raise ValidationAppException("check_in_date and check_out_date must be provided together")
+    if check_in_date and check_out_date and check_out_date <= check_in_date:
+        raise ValidationAppException("check_out_date must be after check_in_date")
+
+
+@router.get("", response_model=PaginatedResponse[HotelResponse])
 def list_hotels(
     request: Request,
     pagination: PaginationParams = Depends(get_pagination_params),
@@ -24,13 +31,14 @@ def list_hotels(
     min_star_rating: int | None = Query(default=None, ge=1, le=5),
     sort_by: str = Query(default="name"),
     sort_order: str = Query(default="asc", pattern="^(asc|desc)$"),
+    check_in_date: date | None = Query(default=None),
+    check_out_date: date | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    repo = HotelRepository(db)
-    service = HotelService(repo)
-    audit_service = AuditService(AuditRepository(db))
+    _validate_stay_dates(check_in_date, check_out_date)
 
-    hotels = service.list_hotels(
+    service = build_hotel_service(db)
+    hotels, availability_map, total = service.list_hotels(
         skip=pagination.offset,
         limit=pagination.limit,
         city=city,
@@ -38,54 +46,20 @@ def list_hotels(
         min_star_rating=min_star_rating,
         sort_by=sort_by,
         sort_order=sort_order,
-    )
-    total = repo.count_hotels(
-        city=city,
-        country=country,
-        min_star_rating=min_star_rating,
+        check_in_date=check_in_date,
+        check_out_date=check_out_date,
+        page=pagination.page,
+        page_size=pagination.page_size,
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
     )
 
     items = [
-        HotelResponse(
-            id=str(h.id),
-            name=h.name,
-            city=h.city,
-            country=h.country,
-            star_rating=h.star_rating,
-            description=h.description,
-            rooms=[
-                HotelRoomResponse(
-                    id=str(r.id),
-                    hotel_id=str(r.hotel_id),
-                    room_type=r.room_type,
-                    capacity=r.capacity,
-                    base_price_per_night=r.base_price_per_night,
-                    total_rooms=r.total_rooms,
-                )
-                for r in h.rooms
-            ],
-        ).model_dump()
-        for h in hotels
+        HotelResponse(**hotel_to_dict(hotel, availability_map=availability_map)).model_dump(
+            mode="json"
+        )
+        for hotel in hotels
     ]
-
-    audit_service.log_action(
-        actor_type=LogActorType.system,
-        action="hotels_list_viewed",
-        resource_type="hotel",
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-        metadata={
-            "page": pagination.page,
-            "page_size": pagination.page_size,
-            "city": city,
-            "country": country,
-            "min_star_rating": min_star_rating,
-            "sort_by": sort_by,
-            "sort_order": sort_order,
-            "result_count": len(items),
-        },
-    )
-    db.commit()
 
     return build_paginated_response(
         items=items,
@@ -98,29 +72,18 @@ def list_hotels(
 @router.get("/{hotel_id}", response_model=HotelResponse)
 def get_hotel(
     hotel_id: str,
+    check_in_date: date | None = Query(default=None),
+    check_out_date: date | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> HotelResponse:
-    repo = HotelRepository(db)
-    service = HotelService(repo)
+    _validate_stay_dates(check_in_date, check_out_date)
 
-    hotel = service.get_hotel(hotel_id)
+    service = build_hotel_service(db)
 
-    return HotelResponse(
-        id=str(hotel.id),
-        name=hotel.name,
-        city=hotel.city,
-        country=hotel.country,
-        star_rating=hotel.star_rating,
-        description=hotel.description,
-        rooms=[
-            HotelRoomResponse(
-                id=str(r.id),
-                hotel_id=str(r.hotel_id),
-                room_type=r.room_type,
-                capacity=r.capacity,
-                base_price_per_night=r.base_price_per_night,
-                total_rooms=r.total_rooms,
-            )
-            for r in hotel.rooms
-        ],
+    hotel, availability_map = service.get_hotel(
+        hotel_id,
+        check_in_date=check_in_date,
+        check_out_date=check_out_date,
     )
+
+    return HotelResponse(**hotel_to_dict(hotel, availability_map=availability_map))
