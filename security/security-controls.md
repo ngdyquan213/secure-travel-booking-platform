@@ -1,156 +1,99 @@
 # Security Controls - Secure Travel Booking Platform
 
-## 1. Authentication Controls
+## Authentication and Authorization
 
 ### Implemented
-- password hashing with bcrypt/passlib
-- JWT access token validation
-- protected endpoints with dependency-based auth
-- admin route protection via role check
-- login attempt logging
 
-### Relevant Components
-- `app/core/security.py`
-- `app/api/deps.py`
-- `app/services/auth_service.py`
-- `app/models/user.py`
+- Password hashing and JWT-based authentication
+- Dependency-based route protection for authenticated users and admins
+- Ownership checks for bookings, payments, and uploaded documents
+- Refresh-token rotation and revocation flows
 
-## 2. Authorization Controls
+### Mocked
 
-### Implemented
-- `get_current_user` for authenticated identity
-- `require_admin` for admin-only endpoints
-- ownership checks for:
-  - bookings
-  - payments
-  - uploaded documents
+- No external identity provider or SSO integration
 
-### Relevant Components
-- `app/api/deps.py`
-- `app/repositories/booking_repository.py`
-- `app/repositories/document_repository.py`
-- `app/repositories/payment_repository.py`
+### Planned
 
-## 3. Payment Security Controls
+- Centralized secret-backed credential rotation for non-local environments
+
+## Payment Security
 
 ### Implemented
-- idempotency key for payment initiation
-- callback signature verification mock
-- replay callback detection
-- amount/currency mismatch validation
-- payment callback persistence
-- payment transaction history
-- security event creation on invalid callback behavior
 
-### Relevant Components
-- `app/services/payment_service.py`
-- `app/services/payment_callback_service.py`
-- `app/core/security.py`
-- `app/models/payment.py`
+- Idempotency key enforcement on payment initiation
+- Callback signature verification
+- Callback replay detection
+- Amount and currency mismatch rejection
+- Callback source allowlist using IP/CIDR matching
+- Security event logging for suspicious callback activity
+- Structured payment logs and callback failure metrics
 
-## 4. Booking Integrity Controls
+### Mocked
 
-### Implemented
-- inventory locking with row-level lock pattern
-- server-side price calculation
-- server-side payment state update
-- transaction-based booking creation
-- room/seat decrement in same transaction
+- Gateway integration remains simulated; callback signing is internal to the app
 
-### Relevant Components
-- `app/services/booking_service.py`
-- `app/services/hotel_booking_service.py`
-- `app/repositories/flight_repository.py`
-- `app/repositories/hotel_repository.py`
+### Planned
 
-## 5. Coupon Abuse Controls
+- Live gateway SDK integration and provider-origin verification beyond IP allowlists
+
+## File and Upload Security
 
 ### Implemented
-- coupon active flag validation
-- coupon start/end time validation
-- minimum booking amount validation
-- per-user usage limit
-- total usage limit
-- one-coupon-per-booking logic
-- coupon usage tracking
 
-### Relevant Components
-- `app/services/coupon_service.py`
-- `app/models/coupon.py`
-- `app/repositories/coupon_repository.py`
+- Extension allowlist
+- MIME allowlist
+- File-signature validation
+- Ownership enforcement on document download
+- Audit logging for upload/download actions
+- Optional malware scanning hook with `mock` and `clamav` backends
 
-## 6. File Security Controls
+### Mocked
 
-### Implemented
-- allowed extension validation
-- allowed MIME type validation
-- ownership check on document download
-- audit logging for upload/download
-- private storage flag
+- Default local development uses mock malware scanning unless a ClamAV service is configured
 
-### Relevant Components
-- `app/utils/file_utils.py`
-- `app/services/upload_service.py`
-- `app/repositories/document_repository.py`
-- `app/models/document.py`
+### Planned
 
-## 7. Monitoring and Audit Controls
+- Presigned object-storage download/upload flows
+- Quarantine bucket and asynchronous malware triage workflow
+
+## Observability and Operations
 
 ### Implemented
-- audit logs for:
-  - registration
-  - login
-  - booking creation
-  - payment initiation
-  - payment callback processing
-  - coupon apply
-  - admin actions
-  - document download
-- security events for:
-  - invalid payment callback signature
-  - replay callback
-  - amount mismatch
-  - login failures
-- request logging with request id
 
-### Relevant Components
-- `app/models/audit.py`
-- `app/services/audit_service.py`
-- `app/middleware/logging_middleware.py`
+- Request logging with request IDs
+- Structured logs for payment and outbox processing
+- Audit logs for sensitive business actions
+- Security events for suspicious activity
+- Health endpoints
+- Basic metrics for request count, error count, payment callback failures, and outbox backlog
+- Outbox backlog tracking during runtime maintenance
+- Runtime task state in readiness responses
+- Rate-limit backend degradation metrics
 
-## 8. Availability Controls
+### Mocked
 
-### Implemented
-- basic in-memory rate limiting middleware
-- health endpoint
-- request logging
+- Metrics are in-process counters exposed as JSON, not a full external telemetry pipeline
 
-### Relevant Components
-- `app/middleware/rate_limit_middleware.py`
-- `app/main.py`
+### Planned
 
-## 9. Secure SDLC Controls
+- Prometheus/OpenTelemetry export
+- Centralized log shipping and alerting rules
+
+## Platform Edge and Secrets
 
 ### Implemented
-- pytest test suite
-- ruff linting
-- bandit scan
-- pip-audit dependency scan
-- GitHub Actions CI
 
-### Relevant Components
-- `tests/`
-- `.github/workflows/ci.yml`
-- `ci-cd/github-actions.yml`
+- Trusted host and CORS controls
+- Forwarded IP configuration
+- Payment callback source allowlist required in staging/production
+- Startup warning when staging/production still uses environment-file secret sourcing
 
-## 10. Control Gaps / Planned Enhancements
+### Mocked
 
-### Not Yet Implemented
-- refresh token rotation / revocation API
-- Redis-backed distributed rate limiting
-- file antivirus scanning
-- object storage with presigned URLs
-- stronger admin permission granularity
-- secret manager integration
-- callback source allowlisting
-- WAF / reverse proxy security headers hardening
+- Secrets are still loaded from environment variables/examples in the current repo
+
+### Planned
+
+- Managed secret store integration for staging/production
+- Reverse-proxy or WAF policy hardening

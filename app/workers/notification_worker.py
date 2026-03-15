@@ -1,3 +1,4 @@
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -15,7 +16,7 @@ class NotificationEvent:
 class NotificationWorker:
     def dispatch(self, event: NotificationEvent) -> None:
         logger.info(
-            "notification_dispatch | event_type=%s channel=%s payload=%s",
+            "notification_dispatch_mock | event_type=%s channel=%s payload=%s",
             event.event_type,
             event.channel,
             event.payload,
@@ -38,6 +39,31 @@ class NotificationWorker:
                     "booking_code": booking_code,
                 },
             )
+        )
+
+
+class MockNotificationWorker(NotificationWorker):
+    pass
+
+
+class RedisNotificationWorker(NotificationWorker):
+    def __init__(self, *, redis_client, channel: str) -> None:
+        self.redis_client = redis_client
+        self.channel = channel
+
+    def dispatch(self, event: NotificationEvent) -> None:
+        payload = {
+            "event_type": event.event_type,
+            "channel": event.channel,
+            "payload": event.payload,
+        }
+        published = self.redis_client.publish(self.channel, json.dumps(payload, default=str))
+        logger.info(
+            "notification_dispatch_real | backend=redis pubsub_channel=%s event_type=%s "
+            "published=%s",
+            self.channel,
+            event.event_type,
+            published,
         )
 
     def notify_payment_success(

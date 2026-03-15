@@ -1,18 +1,13 @@
 import os
+import time
 from collections.abc import Generator
+from importlib import import_module
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session, sessionmaker
-
-from app.core.database import get_db
-from app.core.redis import redis_client
-from app.main import app
-from app.models import Base
-
-pytest_plugins = ("tests.conftest_postgres",)
 
 DB_USER = os.getenv("POSTGRES_USER", "postgres")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
@@ -21,9 +16,25 @@ DB_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
 ADMIN_DB_NAME = os.getenv("POSTGRES_ADMIN_DB") or "secure_travel_booking"
 TEST_DB_NAME = os.getenv("TEST_DB_NAME", f"secure_travel_booking_test_{os.getpid()}")
 
-TEST_DATABASE_URL = (
-    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{TEST_DB_NAME}"
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{TEST_DB_NAME}",
 )
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+
+database_module = import_module("app.core.database")
+redis_module = import_module("app.core.redis")
+rate_limit_module = import_module("app.middleware.rate_limit_middleware")
+startup_module = import_module("app.core.startup")
+factory_module = import_module("app.workers.factory")
+main_module = import_module("app.main")
+run_migrations = import_module("tests.alembic_utils").run_migrations
+
+os.environ.pop("DATABASE_URL", None)
+
+pytest_plugins = ("tests.conftest_postgres",)
+get_db = database_module.get_db
+app = main_module.app
 
 MINIMAL_PDF_BYTES = (
     b"%PDF-1.4\n"
@@ -48,6 +59,71 @@ MINIMAL_PDF_BYTES = (
 )
 
 
+class InMemoryRedis:
+    def __init__(self) -> None:
+        self._store: dict[str, int] = {}
+        self._expirations: dict[str, float] = {}
+
+    def _cleanup(self) -> None:
+        now = time.time()
+        expired = [key for key, expiry in self._expirations.items() if expiry <= now]
+        for key in expired:
+            self._store.pop(key, None)
+            self._expirations.pop(key, None)
+
+    def incr(self, key: str) -> int:
+        self._cleanup()
+        value = self._store.get(key, 0) + 1
+        self._store[key] = value
+        return value
+
+    def expire(self, key: str, seconds: int) -> bool:
+        self._cleanup()
+        if key not in self._store:
+            return False
+        self._expirations[key] = time.time() + max(seconds, 0)
+        return True
+
+    def ttl(self, key: str) -> int:
+        self._cleanup()
+        expiry = self._expirations.get(key)
+        if expiry is None:
+            return -1 if key in self._store else -2
+        return max(int(expiry - time.time()), 0)
+
+    def scan_iter(self, match: str | None = None):
+        self._cleanup()
+        if not match or match == "*":
+            yield from list(self._store.keys())
+            return
+
+        if match.endswith("*"):
+            prefix = match[:-1]
+            for key in list(self._store.keys()):
+                if key.startswith(prefix):
+                    yield key
+            return
+
+        if match in self._store:
+            yield match
+
+    def delete(self, *keys: str) -> int:
+        deleted = 0
+        for key in keys:
+            if key in self._store:
+                deleted += 1
+            self._store.pop(key, None)
+            self._expirations.pop(key, None)
+        return deleted
+
+    def ping(self) -> bool:
+        return True
+
+    def publish(self, channel: str, payload: str) -> int:
+        self._cleanup()
+        return 1
+
+
 def recreate_test_database() -> None:
     admin_url = URL.create(
         drivername="postgresql+psycopg2",
@@ -58,7 +134,11 @@ def recreate_test_database() -> None:
         database=ADMIN_DB_NAME,
     )
 
-    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    admin_engine = create_engine(
+        admin_url,
+        isolation_level="AUTOCOMMIT",
+        connect_args={"connect_timeout": 2},
+    )
     with admin_engine.connect() as conn:
         conn.execute(
             text(
@@ -76,15 +156,28 @@ def recreate_test_database() -> None:
     admin_engine.dispose()
 
 
+def _postgres_connect_args() -> dict[str, int]:
+    if TEST_DATABASE_URL.startswith("postgresql"):
+        return {"connect_timeout": 2}
+    return {}
+
+
 @pytest.fixture(scope="session")
 def db_engine():
-    recreate_test_database()
+    try:
+        recreate_test_database()
+    except Exception:
+        pytest.skip(
+            "PostgreSQL is not available for integration tests. "
+            "Start infra/docker/docker-compose.test.yml and rerun pytest."
+        )
 
-    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
-
-    with engine.connect() as conn:
-        Base.metadata.create_all(bind=conn)
-        conn.commit()
+    engine = create_engine(
+        TEST_DATABASE_URL,
+        pool_pre_ping=True,
+        connect_args=_postgres_connect_args(),
+    )
+    run_migrations(TEST_DATABASE_URL)
 
     yield engine
 
@@ -113,18 +206,31 @@ def db_session(db_engine) -> Generator[Session, None, None]:
 
 
 @pytest.fixture(autouse=True)
-def clear_test_redis_state():
+def configure_test_redis(monkeypatch):
+    client = redis_module.redis_client
+
     try:
-        keys = list(redis_client.scan_iter(match="rl:*"))
+        client.ping()
+        active_client = client
+    except Exception:
+        active_client = InMemoryRedis()
+        monkeypatch.setattr(redis_module, "redis_client", active_client)
+        monkeypatch.setattr(rate_limit_module, "redis_client", active_client)
+        monkeypatch.setattr(startup_module, "redis_client", active_client)
+        monkeypatch.setattr(factory_module, "redis_client", active_client)
+        monkeypatch.setattr(main_module, "redis_client", active_client)
+
+    try:
+        keys = list(active_client.scan_iter(match="rl:*"))
         if keys:
-            redis_client.delete(*keys)
+            active_client.delete(*keys)
     except Exception:
         pass
     yield
     try:
-        keys = list(redis_client.scan_iter(match="rl:*"))
+        keys = list(active_client.scan_iter(match="rl:*"))
         if keys:
-            redis_client.delete(*keys)
+            active_client.delete(*keys)
     except Exception:
         pass
 
@@ -149,7 +255,7 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_db] = override_get_db
 
     try:
-        with TestClient(app) as c:
+        with TestClient(app, client=("127.0.0.1", 50000)) as c:
             yield c
     finally:
         app.dependency_overrides.clear()

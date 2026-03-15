@@ -6,6 +6,7 @@ from app.core.exceptions import NotFoundAppException
 from app.models.enums import LogActorType
 from app.repositories.booking_repository import BookingRepository
 from app.repositories.document_repository import DocumentRepository
+from app.services.application_service import ApplicationService
 from app.services.audit_service import AuditService
 from app.services.pdf_voucher_service import PDFVoucherService
 from app.services.voucher_document_service import VoucherDocumentService
@@ -18,31 +19,26 @@ from app.utils.response_mappers import (
 from app.workers.email_worker import EmailWorker
 
 
-class VoucherService:
+class VoucherService(ApplicationService):
     def __init__(
         self,
         db: Session,
         booking_repo: BookingRepository,
         audit_service: AuditService,
         document_repo: DocumentRepository,
-        pdf_voucher_service: PDFVoucherService | None = None,
-        email_worker: EmailWorker | None = None,
-        voucher_render_service: VoucherRenderService | None = None,
-        voucher_document_service: VoucherDocumentService | None = None,
+        pdf_voucher_service: PDFVoucherService,
+        email_worker: EmailWorker,
+        voucher_render_service: VoucherRenderService,
+        voucher_document_service: VoucherDocumentService,
     ) -> None:
         self.db = db
         self.booking_repo = booking_repo
         self.audit_service = audit_service
         self.document_repo = document_repo
-        self.pdf_voucher_service = pdf_voucher_service or PDFVoucherService()
-        self.email_worker = email_worker or EmailWorker()
-        self.voucher_render_service = voucher_render_service or VoucherRenderService()
-        self.voucher_document_service = voucher_document_service or VoucherDocumentService(
-            document_repo=document_repo,
-            audit_service=audit_service,
-            pdf_voucher_service=self.pdf_voucher_service,
-            email_worker=self.email_worker,
-        )
+        self.pdf_voucher_service = pdf_voucher_service
+        self.email_worker = email_worker
+        self.voucher_render_service = voucher_render_service
+        self.voucher_document_service = voucher_document_service
 
     def _resolve_voucher_type(self, booking) -> str:
         return self.voucher_render_service.resolve_voucher_type(booking)
@@ -72,7 +68,7 @@ class VoucherService:
             user_agent=user_agent,
             metadata={"booking_code": booking.booking_code},
         )
-        self.db.commit()
+        self.commit()
         return booking
 
     def render_my_booking_voucher(
@@ -121,17 +117,13 @@ class VoucherService:
         if not booking:
             raise NotFoundAppException("Booking not found")
 
-        try:
-            pdf_bytes, filename = self.voucher_document_service.export_pdf(
-                booking=booking,
-                ip_address=ip_address,
-                user_agent=user_agent,
-            )
-            self.db.commit()
-            return pdf_bytes, filename
-        except Exception:
-            self.db.rollback()
-            raise
+        pdf_bytes, filename = self.voucher_document_service.export_pdf(
+            booking=booking,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        self.commit()
+        return pdf_bytes, filename
 
     def generate_and_store_my_booking_voucher(
         self,

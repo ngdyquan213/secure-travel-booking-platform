@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.core.metrics import operational_metrics
 from app.middleware.rate_limit_middleware import RateLimitMiddleware, redis_client
 
 
@@ -62,6 +63,7 @@ def test_rate_limit_cannot_be_bypassed_by_changing_user_agent():
 
 def test_rate_limit_fails_closed_for_sensitive_path_when_redis_is_unavailable(monkeypatch):
     app = create_test_app(max_requests=1, window_seconds=60)
+    operational_metrics.reset()
 
     @app.post("/api/v1/auth/login")
     def login():
@@ -74,10 +76,12 @@ def test_rate_limit_fails_closed_for_sensitive_path_when_redis_is_unavailable(mo
 
     assert resp.status_code == 503
     assert resp.json()["error_code"] == "RATE_LIMIT_UNAVAILABLE"
+    assert operational_metrics.snapshot()["rate_limit_backend_failures_total"] == 1
 
 
 def test_rate_limit_fails_open_for_non_sensitive_path_when_redis_is_unavailable(monkeypatch):
     app = create_test_app(max_requests=1, window_seconds=60)
+    operational_metrics.reset()
 
     monkeypatch.setattr(redis_client, "incr", raise_redis_down)
 
@@ -85,3 +89,4 @@ def test_rate_limit_fails_open_for_non_sensitive_path_when_redis_is_unavailable(
         resp = client.get("/ping")
 
     assert resp.status_code == 200
+    assert operational_metrics.snapshot()["rate_limit_backend_failures_total"] == 1

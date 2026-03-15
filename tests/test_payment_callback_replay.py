@@ -23,7 +23,9 @@ from app.repositories.audit_repository import AuditRepository
 from app.repositories.booking_repository import BookingRepository
 from app.repositories.payment_repository import PaymentRepository
 from app.services.audit_service import AuditService
+from app.services.payment_callback_domain_service import PaymentCallbackDomainService
 from app.services.payment_callback_service import PaymentCallbackService
+from app.workers.email_worker import EmailWorker
 
 
 def create_user_and_login(client, db_session, email: str, username: str):
@@ -239,6 +241,8 @@ def test_payment_callback_replay_detected_under_concurrency(db_engine, monkeypat
             booking_repo=BookingRepository(session),
             payment_repo=PaymentRepository(session),
             audit_service=AuditService(AuditRepository(session)),
+            email_worker=EmailWorker(),
+            domain_service=PaymentCallbackDomainService(),
         )
         try:
             service.process_callback(**payload)

@@ -25,6 +25,7 @@ from app.models.enums import (
 )
 from app.models.flight import Airline, Airport, Flight
 from app.models.payment import Payment
+from app.models.system import OutboxEvent
 from app.models.user import User
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.booking_repository import BookingRepository
@@ -38,10 +39,15 @@ from app.repositories.user_repository import UserRepository
 from app.schemas.booking import BookingCancelRequest, BookingCreateRequest
 from app.schemas.coupon import CouponApplyRequest
 from app.services.audit_service import AuditService
+from app.services.booking_cancellation_domain_service import BookingCancellationDomainService
 from app.services.booking_cancellation_service import BookingCancellationService
+from app.services.booking_inventory_service import BookingInventoryService
 from app.services.booking_service import BookingService
 from app.services.coupon_service import CouponService
+from app.services.pdf_voucher_service import PDFVoucherService
 from app.services.voucher_document_service import VoucherDocumentService
+from app.workers.email_worker import EmailWorker
+from app.workers.notification_worker import NotificationWorker
 
 
 def _session_factory(db_engine):
@@ -145,6 +151,8 @@ def test_booking_service_persists_changes_across_sessions(db_engine):
         flight_repo=FlightRepository(write_session),
         user_repo=UserRepository(write_session),
         audit_service=AuditService(AuditRepository(write_session)),
+        email_worker=EmailWorker(),
+        notification_worker=NotificationWorker(),
     )
     booking = service.create_booking(
         user_id=user_id,
@@ -269,10 +277,14 @@ def test_booking_cancellation_persists_changes_across_sessions(db_engine):
         db=write_session,
         booking_repo=BookingRepository(write_session),
         payment_repo=PaymentRepository(write_session),
-        flight_repo=FlightRepository(write_session),
-        hotel_repo=HotelRepository(write_session),
-        tour_repo=TourRepository(write_session),
         audit_service=AuditService(AuditRepository(write_session)),
+        email_worker=EmailWorker(),
+        inventory_service=BookingInventoryService(
+            flight_repo=FlightRepository(write_session),
+            hotel_repo=HotelRepository(write_session),
+            tour_repo=TourRepository(write_session),
+        ),
+        domain_service=BookingCancellationDomainService(),
     )
     service.cancel_booking(
         booking_id=booking_id,
@@ -309,13 +321,14 @@ def test_voucher_generation_uses_configured_upload_dir(db_session, monkeypatch, 
     service = VoucherDocumentService(
         document_repo=DocumentRepository(db_session),
         audit_service=AuditService(AuditRepository(db_session)),
+        pdf_voucher_service=PDFVoucherService(),
+        email_worker=EmailWorker(),
     )
 
     document = service.generate_and_store(booking=booking)
 
-    storage_path = Path(document.storage_key)
-    assert storage_path.parent == tmp_path.resolve()
-    assert storage_path.is_absolute()
+    storage_path = tmp_path.resolve() / document.storage_key
+    assert not Path(document.storage_key).is_absolute()
     assert document.document_type == DocumentType.voucher
     assert storage_path.exists()
     assert document.checksum_sha256 is not None
@@ -336,6 +349,8 @@ def test_voucher_generation_cleans_up_file_on_failure(db_session, monkeypatch, t
     service = VoucherDocumentService(
         document_repo=DocumentRepository(db_session),
         audit_service=audit_service,
+        pdf_voucher_service=PDFVoucherService(),
+        email_worker=EmailWorker(),
     )
 
     def fail_log_action(*args, **kwargs):
@@ -353,3 +368,165 @@ def test_voucher_generation_cleans_up_file_on_failure(db_session, monkeypatch, t
         .count()
         == 0
     )
+
+
+def test_booking_service_request_path_only_enqueues_side_effects(db_engine, monkeypatch):
+    SessionLocal = _session_factory(db_engine)
+    suffix = uuid4().hex
+
+    cleanup_session = SessionLocal()
+    cleanup_session.query(OutboxEvent).delete()
+    cleanup_session.commit()
+    cleanup_session.close()
+
+    seed_session = SessionLocal()
+    user = _seed_user(seed_session, suffix)
+    flight = _seed_flight(seed_session, suffix, available_seats=5)
+    user_id = str(user.id)
+    flight_id = str(flight.id)
+    seed_session.close()
+
+    write_session = SessionLocal()
+    email_worker = EmailWorker()
+    notification_worker = NotificationWorker()
+    service = BookingService(
+        db=write_session,
+        booking_repo=BookingRepository(write_session),
+        flight_repo=FlightRepository(write_session),
+        user_repo=UserRepository(write_session),
+        audit_service=AuditService(AuditRepository(write_session)),
+        email_worker=email_worker,
+        notification_worker=notification_worker,
+    )
+
+    email_dispatches = {"count": 0}
+    notification_dispatches = {"count": 0}
+
+    def fail_if_email_dispatched(**kwargs):
+        email_dispatches["count"] += 1
+        raise AssertionError("request path must not dispatch email inline")
+
+    def fail_if_notification_dispatched(**kwargs):
+        notification_dispatches["count"] += 1
+        raise AssertionError("request path must not dispatch notification inline")
+
+    monkeypatch.setattr(email_worker, "send_booking_created_email", fail_if_email_dispatched)
+    monkeypatch.setattr(
+        notification_worker,
+        "notify_booking_created",
+        fail_if_notification_dispatched,
+    )
+
+    booking = service.create_booking(
+        user_id=user_id,
+        payload=BookingCreateRequest(flight_id=flight_id, quantity=1),
+    )
+    booking_id = str(booking.id)
+    write_session.close()
+
+    verify_session = SessionLocal()
+    persisted_booking = verify_session.query(Booking).filter(Booking.id == booking_id).first()
+    persisted_flight = verify_session.query(Flight).filter(Flight.id == flight_id).first()
+    pending_outbox_events = (
+        verify_session.query(OutboxEvent)
+        .filter(
+            OutboxEvent.status == "pending",
+            OutboxEvent.target.in_(("email", "notification")),
+        )
+        .all()
+    )
+    verify_session.close()
+
+    assert persisted_booking is not None
+    assert persisted_flight is not None
+    assert persisted_flight.available_seats == 4
+    assert email_dispatches["count"] == 0
+    assert notification_dispatches["count"] == 0
+    assert len(pending_outbox_events) == 2
+
+    process_session = SessionLocal()
+    failing_service = BookingService(
+        db=process_session,
+        booking_repo=BookingRepository(process_session),
+        flight_repo=FlightRepository(process_session),
+        user_repo=UserRepository(process_session),
+        audit_service=AuditService(AuditRepository(process_session)),
+        email_worker=email_worker,
+        notification_worker=notification_worker,
+    )
+
+    processed_count = failing_service.outbox_service.process_due_events()
+    process_session.close()
+
+    verify_session = SessionLocal()
+    persisted_booking = verify_session.query(Booking).filter(Booking.id == booking_id).first()
+    persisted_flight = verify_session.query(Flight).filter(Flight.id == flight_id).first()
+    failed_outbox_events = (
+        verify_session.query(OutboxEvent)
+        .filter(
+            OutboxEvent.status == "failed",
+            OutboxEvent.target.in_(("email", "notification")),
+        )
+        .all()
+    )
+    verify_session.close()
+
+    assert processed_count == 0
+    assert persisted_booking is not None
+    assert persisted_flight is not None
+    assert persisted_flight.available_seats == 4
+    assert len(failed_outbox_events) == 2
+    assert all(event.attempt_count == 1 for event in failed_outbox_events)
+    assert all(event.claim_token is None for event in failed_outbox_events)
+    assert all(event.claimed_by is None for event in failed_outbox_events)
+    assert all(event.lease_expires_at is None for event in failed_outbox_events)
+
+
+def test_booking_service_commits_outbox_events_with_booking_transaction(db_engine, monkeypatch):
+    SessionLocal = _session_factory(db_engine)
+    suffix = uuid4().hex
+
+    cleanup_session = SessionLocal()
+    cleanup_session.query(OutboxEvent).delete()
+    cleanup_session.commit()
+    cleanup_session.close()
+
+    seed_session = SessionLocal()
+    user = _seed_user(seed_session, suffix)
+    flight = _seed_flight(seed_session, suffix, available_seats=5)
+    user_id = str(user.id)
+    flight_id = str(flight.id)
+    seed_session.close()
+
+    write_session = SessionLocal()
+    service = BookingService(
+        db=write_session,
+        booking_repo=BookingRepository(write_session),
+        flight_repo=FlightRepository(write_session),
+        user_repo=UserRepository(write_session),
+        audit_service=AuditService(AuditRepository(write_session)),
+        email_worker=EmailWorker(),
+        notification_worker=NotificationWorker(),
+    )
+
+    booking = service.create_booking(
+        user_id=user_id,
+        payload=BookingCreateRequest(flight_id=flight_id, quantity=1),
+    )
+    booking_id = str(booking.id)
+    write_session.close()
+
+    verify_session = SessionLocal()
+    persisted_booking = verify_session.query(Booking).filter(Booking.id == booking_id).first()
+    persisted_outbox_events = (
+        verify_session.query(OutboxEvent)
+        .filter(
+            OutboxEvent.status == "pending",
+            OutboxEvent.target.in_(("email", "notification")),
+        )
+        .all()
+    )
+    verify_session.close()
+
+    assert persisted_booking is not None
+    assert len(persisted_outbox_events) == 2

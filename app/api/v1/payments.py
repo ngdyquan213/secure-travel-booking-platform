@@ -9,8 +9,6 @@ from app.api.deps import (
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.exceptions import AppException, NotFoundAppException
-from app.repositories.booking_repository import BookingRepository
-from app.repositories.payment_repository import PaymentRepository
 from app.schemas.payment import (
     PaymentCallbackRequest,
     PaymentCallbackResponse,
@@ -112,10 +110,11 @@ def get_booking_payment_status(
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PaymentStatusResponse:
-    booking_repo = BookingRepository(db)
-    payment_repo = PaymentRepository(db)
-
-    booking = booking_repo.get_by_id_and_user_id(booking_id, str(current_user.id))
+    service = build_payment_service(db)
+    booking, payment = service.get_booking_payment_status(
+        booking_id=booking_id,
+        user_id=str(current_user.id),
+    )
     if not booking:
         return PaymentStatusResponse(
             booking_id=booking_id,
@@ -123,7 +122,6 @@ def get_booking_payment_status(
             payment=None,
         )
 
-    payment = payment_repo.get_latest_by_booking_id(booking_id)
     return PaymentStatusResponse(
         booking_id=str(booking.id),
         booking_payment_status=enum_to_str(booking.payment_status),

@@ -1,5 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from uuid import uuid4
+
+from sqlalchemy.orm import sessionmaker
 
 from app.core.security import get_password_hash
 from app.models.booking import Booking, BookingItem
@@ -17,6 +20,18 @@ from app.models.flight import Airline, Airport, Flight
 from app.models.payment import Payment
 from app.models.tour import Tour, TourPriceRule, TourSchedule
 from app.models.user import User
+from app.repositories.audit_repository import AuditRepository
+from app.repositories.booking_repository import BookingRepository
+from app.repositories.flight_repository import FlightRepository
+from app.repositories.hotel_repository import HotelRepository
+from app.repositories.payment_repository import PaymentRepository
+from app.repositories.tour_repository import TourRepository
+from app.schemas.booking import BookingCancelRequest
+from app.services.audit_service import AuditService
+from app.services.booking_cancellation_domain_service import BookingCancellationDomainService
+from app.services.booking_cancellation_service import BookingCancellationService
+from app.services.booking_inventory_service import BookingInventoryService
+from app.workers.email_worker import EmailWorker
 
 
 def create_user_and_login(client, db_session, email: str, username: str):
@@ -42,15 +57,16 @@ def create_user_and_login(client, db_session, email: str, username: str):
 
 
 def seed_flight_booking_with_payment(db_session, user_id: str):
-    airline = Airline(code="RC", name="Refund Carrier")
-    dep = Airport(code="RCA", name="A", city="A", country="VN")
-    arr = Airport(code="RCB", name="B", city="B", country="VN")
+    suffix = uuid4().hex[:6].upper()
+    airline = Airline(code=f"R{suffix[:2]}", name="Refund Carrier")
+    dep = Airport(code=f"D{suffix[:3]}", name="A", city="A", country="VN")
+    arr = Airport(code=f"A{suffix[:3]}", name="B", city="B", country="VN")
     db_session.add_all([airline, dep, arr])
     db_session.flush()
 
     flight = Flight(
         airline_id=airline.id,
-        flight_number="RC100",
+        flight_number=f"RC{suffix[:4]}",
         departure_airport_id=dep.id,
         arrival_airport_id=arr.id,
         departure_time=datetime.now(timezone.utc) + timedelta(days=1),
@@ -63,7 +79,7 @@ def seed_flight_booking_with_payment(db_session, user_id: str):
     db_session.flush()
 
     booking = Booking(
-        booking_code="BK-CANCEL-FLIGHT",
+        booking_code=f"BK-CANCEL-{suffix}",
         user_id=user_id,
         status=BookingStatus.pending,
         total_base_amount=Decimal("1200000.00"),
@@ -95,8 +111,8 @@ def seed_flight_booking_with_payment(db_session, user_id: str):
         status=PaymentStatus.paid,
         amount=Decimal("1200000.00"),
         currency="VND",
-        gateway_order_ref="ORDER-CANCEL-001",
-        gateway_transaction_ref="TXN-CANCEL-001",
+        gateway_order_ref=f"ORDER-CANCEL-{suffix}",
+        gateway_transaction_ref=f"TXN-CANCEL-{suffix}",
         paid_at=datetime.now(timezone.utc),
     )
     db_session.add(payment)
@@ -224,3 +240,136 @@ def test_cancel_pending_tour_booking_cancels_payment_no_refund(client, db_sessio
     assert body["status"] == "cancelled"
     assert body["payment_status"] == "cancelled"
     assert body["refund_amount"] == "0"
+
+
+def test_cancel_booking_uses_locked_booking_lookup(db_engine, monkeypatch):
+    session_local = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+
+    seed_session = session_local()
+    user = User(
+        email="cancel-lock@example.com",
+        username="cancel_lock",
+        full_name="Cancel Lock",
+        password_hash=get_password_hash("Password123"),
+        status=UserStatus.active,
+        email_verified=True,
+        phone_verified=False,
+        failed_login_count=0,
+    )
+    seed_session.add(user)
+    seed_session.commit()
+
+    booking = seed_flight_booking_with_payment(seed_session, str(user.id))
+    booking_id = str(booking.id)
+    user_id = str(user.id)
+    seed_session.close()
+
+    write_session = session_local()
+    booking_repo = BookingRepository(write_session)
+    original_locked_lookup = booking_repo.get_by_id_and_user_id_for_update
+    locked_calls: list[tuple[str, str]] = []
+
+    def fail_non_locked_lookup(*args, **kwargs):
+        raise AssertionError("cancel flow must use locked booking lookup")
+
+    def track_locked_lookup(booking_id_value: str, user_id_value: str):
+        locked_calls.append((booking_id_value, user_id_value))
+        return original_locked_lookup(booking_id_value, user_id_value)
+
+    monkeypatch.setattr(booking_repo, "get_by_id_and_user_id", fail_non_locked_lookup)
+    monkeypatch.setattr(booking_repo, "get_by_id_and_user_id_for_update", track_locked_lookup)
+
+    service = BookingCancellationService(
+        db=write_session,
+        booking_repo=booking_repo,
+        payment_repo=PaymentRepository(write_session),
+        audit_service=AuditService(AuditRepository(write_session)),
+        email_worker=EmailWorker(),
+        inventory_service=BookingInventoryService(
+            flight_repo=FlightRepository(write_session),
+            hotel_repo=HotelRepository(write_session),
+            tour_repo=TourRepository(write_session),
+        ),
+        domain_service=BookingCancellationDomainService(),
+    )
+
+    try:
+        booking, payment, refund = service.cancel_booking(
+            booking_id=booking_id,
+            user_id=user_id,
+            payload=BookingCancelRequest(reason="Lock the row"),
+        )
+    finally:
+        write_session.close()
+
+    assert str(booking.id) == booking_id
+    assert payment is not None
+    assert refund is not None
+    assert locked_calls == [(booking_id, user_id)]
+
+
+def test_cancel_booking_uses_locked_payment_lookup(db_engine, monkeypatch):
+    session_local = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+
+    seed_session = session_local()
+    user = User(
+        email="cancel-payment-lock@example.com",
+        username="cancel_payment_lock",
+        full_name="Cancel Payment Lock",
+        password_hash=get_password_hash("Password123"),
+        status=UserStatus.active,
+        email_verified=True,
+        phone_verified=False,
+        failed_login_count=0,
+    )
+    seed_session.add(user)
+    seed_session.commit()
+
+    booking = seed_flight_booking_with_payment(seed_session, str(user.id))
+    booking_id = str(booking.id)
+    user_id = str(user.id)
+    seed_session.close()
+
+    write_session = session_local()
+    booking_repo = BookingRepository(write_session)
+    payment_repo = PaymentRepository(write_session)
+    locked_calls: list[str] = []
+    original_locked_lookup = payment_repo.get_latest_by_booking_id_for_update
+
+    def fail_non_locked_lookup(*args, **kwargs):
+        raise AssertionError("cancel flow must use locked payment lookup")
+
+    def track_locked_lookup(booking_id_value: str):
+        locked_calls.append(booking_id_value)
+        return original_locked_lookup(booking_id_value)
+
+    monkeypatch.setattr(payment_repo, "get_latest_by_booking_id", fail_non_locked_lookup)
+    monkeypatch.setattr(payment_repo, "get_latest_by_booking_id_for_update", track_locked_lookup)
+
+    service = BookingCancellationService(
+        db=write_session,
+        booking_repo=booking_repo,
+        payment_repo=payment_repo,
+        audit_service=AuditService(AuditRepository(write_session)),
+        email_worker=EmailWorker(),
+        inventory_service=BookingInventoryService(
+            flight_repo=FlightRepository(write_session),
+            hotel_repo=HotelRepository(write_session),
+            tour_repo=TourRepository(write_session),
+        ),
+        domain_service=BookingCancellationDomainService(),
+    )
+
+    try:
+        booking, payment, refund = service.cancel_booking(
+            booking_id=booking_id,
+            user_id=user_id,
+            payload=BookingCancelRequest(reason="Lock payment row"),
+        )
+    finally:
+        write_session.close()
+
+    assert str(booking.id) == booking_id
+    assert payment is not None
+    assert refund is not None
+    assert locked_calls == [booking_id]

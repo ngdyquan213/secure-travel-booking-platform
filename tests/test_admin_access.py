@@ -53,12 +53,18 @@ def test_non_admin_cannot_access_admin_users(client, db_session):
 
 
 def test_user_with_specific_permission_can_access_admin_users(client, db_session):
-    permission = Permission(
-        name=PERM_ADMIN_USERS_READ,
-        description="Can read admin users",
+    permission = (
+        db_session.query(Permission).filter(Permission.name == PERM_ADMIN_USERS_READ).one_or_none()
     )
+    if permission is None:
+        permission = Permission(
+            name=PERM_ADMIN_USERS_READ,
+            description="Can read admin users",
+        )
     role = Role(name="support_agent", description="Support role")
-    db_session.add_all([permission, role])
+    db_session.add(role)
+    if permission.id is None:
+        db_session.add(permission)
     db_session.flush()
     db_session.add(RolePermission(role_id=role.id, permission_id=permission.id))
 
@@ -81,12 +87,20 @@ def test_user_with_specific_permission_can_access_admin_users(client, db_session
 
 
 def test_user_with_other_admin_permission_cannot_access_admin_users(client, db_session):
-    permission = Permission(
-        name=PERM_ADMIN_BOOKINGS_READ,
-        description="Can read admin bookings",
+    permission = (
+        db_session.query(Permission)
+        .filter(Permission.name == PERM_ADMIN_BOOKINGS_READ)
+        .one_or_none()
     )
+    if permission is None:
+        permission = Permission(
+            name=PERM_ADMIN_BOOKINGS_READ,
+            description="Can read admin bookings",
+        )
     role = Role(name="booking_auditor", description="Booking audit role")
-    db_session.add_all([permission, role])
+    db_session.add(role)
+    if permission.id is None:
+        db_session.add(permission)
     db_session.flush()
     db_session.add(RolePermission(role_id=role.id, permission_id=permission.id))
 

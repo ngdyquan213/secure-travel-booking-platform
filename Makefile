@@ -1,11 +1,12 @@
-.PHONY: install dev migrate makemigrations seed seed-coupons create-admin test lint security up down logs restart up-test-db down-test-db test-postgres runtime-check smoke-local up-staging down-staging logs-staging smoke-staging
+.PHONY: install dev migrate makemigrations seed seed-coupons seed-demo create-admin test test-cov lint security up down logs restart up-test-db down-test-db test-postgres runtime-check smoke-local up-staging down-staging logs-staging smoke-staging
 
 install:
-	pip install --upgrade pip
-	pip install -e ".[dev]"
+	pip install --upgrade pip==25.2
+	pip install -r requirements-dev.lock
+	pip install --no-deps -e .
 
 dev:
-	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips="${FORWARDED_ALLOW_IPS:-127.0.0.1,::1}"
 
 migrate:
 	alembic upgrade head
@@ -19,11 +20,20 @@ seed:
 seed-coupons:
 	python scripts/seed_coupons.py
 
+seed-demo:
+	python scripts/seed_demo_environment.py
+
 create-admin:
 	python scripts/create_admin.py
 
 test:
-	pytest -q
+	python -m pytest -q
+
+test-cov:
+	python -m pytest --cov=app --cov-report=term-missing -q
+
+test-fast:
+	python -m pytest -q tests/test_config_validation.py tests/test_health_endpoints.py tests/test_runtime_tasks.py tests/test_request_context.py
 
 lint:
 	ruff check app tests scripts
@@ -51,7 +61,7 @@ down-test-db:
 	docker compose -f infra/docker/docker-compose.test.yml down
 
 test-postgres:
-	TEST_DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5433/secure_travel_booking_test pytest -q -m postgres tests/test_postgres_smoke.py tests/test_postgres_coupon_json.py
+	TEST_DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5433/secure_travel_booking_test python -m pytest -q -m postgres tests/test_postgres_smoke.py tests/test_postgres_coupon_json.py
 
 runtime-check:
 	python -c "from app.core.startup import run_startup_checks; run_startup_checks()"
@@ -69,4 +79,4 @@ logs-staging:
 	docker compose --env-file .env.staging -f infra/docker/docker-compose.staging.yml logs -f
 
 smoke-staging:
-	python scripts/smoke_local_stack.py --expected-environment staging
+	python scripts/smoke_local_stack.py --base-url $${SMOKE_BASE_URL:-http://localhost:$${HOST_HTTP_PORT:-8080}} --prometheus-url $${SMOKE_PROMETHEUS_URL:-http://localhost:$${HOST_PROMETHEUS_PORT:-9090}} --expected-environment staging

@@ -1,13 +1,9 @@
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import build_upload_service, get_current_user
 from app.core.database import get_db
 from app.models.enums import DocumentType
-from app.repositories.document_repository import DocumentRepository
 from app.schemas.document import DocumentResponse
 from app.utils.request_context import get_client_ip, get_user_agent
 from app.utils.response_mappers import document_to_dict
@@ -45,9 +41,8 @@ def list_my_documents(
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    repo = DocumentRepository(db)
-
-    documents = repo.list_by_user_id(str(current_user.id), skip=0, limit=100)
+    service = build_upload_service(db)
+    documents = service.list_my_documents(str(current_user.id))
     return [DocumentResponse(**document_to_dict(doc)) for doc in documents]
 
 
@@ -67,10 +62,4 @@ def download_document(
         user_agent=get_user_agent(request),
     )
 
-    file_path = Path(document.storage_key)
-
-    return FileResponse(
-        path=file_path,
-        media_type=document.mime_type,
-        filename=document.original_filename,
-    )
+    return service.storage_service.build_download_response(document=document)

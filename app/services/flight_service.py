@@ -2,10 +2,11 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundAppException
 from app.models.enums import LogActorType
+from app.services.application_service import ApplicationService
 from app.services.audit_service import AuditService
 
 
-class FlightService:
+class FlightService(ApplicationService):
     def __init__(self, *, db: Session, flight_repo, audit_service: AuditService):
         self.db = db
         self.flight_repo = flight_repo
@@ -40,28 +41,24 @@ class FlightService:
             status=status,
         )
 
-        try:
-            self.audit_service.log_action(
-                actor_type=LogActorType.system,
-                action="flights_list_viewed",
-                resource_type="flight",
-                ip_address=ip_address,
-                user_agent=user_agent,
-                metadata={
-                    "page": page,
-                    "page_size": page_size,
-                    "departure_airport_code": departure_airport_code,
-                    "arrival_airport_code": arrival_airport_code,
-                    "status": status,
-                    "sort_by": sort_by,
-                    "sort_order": sort_order,
-                    "result_count": len(flights),
-                },
-            )
-            self.db.commit()
-        except Exception:
-            self.db.rollback()
-            raise
+        self.audit_service.log_action(
+            actor_type=LogActorType.system,
+            action="flights_list_viewed",
+            resource_type="flight",
+            ip_address=ip_address,
+            user_agent=user_agent,
+            metadata={
+                "page": page,
+                "page_size": page_size,
+                "departure_airport_code": departure_airport_code,
+                "arrival_airport_code": arrival_airport_code,
+                "status": status,
+                "sort_by": sort_by,
+                "sort_order": sort_order,
+                "result_count": len(flights),
+            },
+        )
+        self.commit()
 
         return flights, total
 

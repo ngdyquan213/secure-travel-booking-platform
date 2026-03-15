@@ -10,3 +10,5 @@ alembic/versions/__pycache__/
 .venv
 .env.*
 !.env.staging.example
+!.env.example
+!.env.test.example

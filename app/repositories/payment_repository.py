@@ -16,11 +16,28 @@ class PaymentRepository:
     def get_by_id(self, payment_id: str) -> Payment | None:
         return self.db.query(Payment).filter(Payment.id == payment_id).first()
 
+    def get_by_id_for_update(self, payment_id: str) -> Payment | None:
+        return (
+            self.db.query(Payment)
+            .filter(Payment.id == payment_id)
+            .with_for_update()
+            .first()
+        )
+
     def get_latest_by_booking_id(self, booking_id: str) -> Payment | None:
         return (
             self.db.query(Payment)
             .filter(Payment.booking_id == booking_id)
             .order_by(Payment.created_at.desc())
+            .first()
+        )
+
+    def get_latest_by_booking_id_for_update(self, booking_id: str) -> Payment | None:
+        return (
+            self.db.query(Payment)
+            .filter(Payment.booking_id == booking_id)
+            .order_by(Payment.created_at.desc())
+            .with_for_update()
             .first()
         )
 

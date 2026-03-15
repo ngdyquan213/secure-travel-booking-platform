@@ -16,7 +16,13 @@ class AuthTokenService:
     def __init__(self, user_repo: UserRepository) -> None:
         self.user_repo = user_repo
 
-    def create_and_store_refresh_token(self, *, user_id: str) -> str:
+    def create_and_store_refresh_token(
+        self,
+        *,
+        user_id: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> str:
         refresh_token_value = create_refresh_token_value()
         refresh_token_hash = hash_refresh_token(refresh_token_value)
         refresh_token_expires_at = get_refresh_token_expiry()
@@ -24,15 +30,27 @@ class AuthTokenService:
         refresh_token = RefreshToken(
             user_id=user_id,
             token_hash=refresh_token_hash,
+            ip_address=ip_address,
+            user_agent=user_agent,
             expires_at=refresh_token_expires_at,
             revoked_at=None,
         )
         self.user_repo.add_refresh_token(refresh_token)
         return refresh_token_value
 
-    def issue_session_tokens(self, *, user_id: str) -> tuple[str, str]:
+    def issue_session_tokens(
+        self,
+        *,
+        user_id: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> tuple[str, str]:
         access_token = create_access_token(user_id)
-        refresh_token = self.create_and_store_refresh_token(user_id=user_id)
+        refresh_token = self.create_and_store_refresh_token(
+            user_id=user_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
         return access_token, refresh_token
 
     def validate_refresh_token(self, *, refresh_token: str, lock_for_update: bool = False):
@@ -59,6 +77,8 @@ class AuthTokenService:
         *,
         refresh_token: str,
         user_id: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
         stored_token: RefreshToken | None = None,
     ) -> tuple[RefreshToken, str, str]:
         stored = stored_token or self.validate_refresh_token(
@@ -70,5 +90,9 @@ class AuthTokenService:
         self.user_repo.revoke_refresh_token(stored, revoked_at=now)
 
         access_token = create_access_token(user_id)
-        new_refresh_token = self.create_and_store_refresh_token(user_id=user_id)
+        new_refresh_token = self.create_and_store_refresh_token(
+            user_id=user_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
         return stored, access_token, new_refresh_token

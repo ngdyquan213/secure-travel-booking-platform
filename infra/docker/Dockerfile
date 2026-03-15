@@ -10,11 +10,12 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml README.md /build/
+COPY pyproject.toml README.md requirements.lock /build/
 COPY app /build/app
 
-RUN python -m pip install --upgrade pip setuptools wheel \
-    && pip wheel --wheel-dir /wheels /build
+RUN python -m pip install --upgrade pip==25.2 setuptools==82.0.1 wheel==0.46.3 \
+    && pip wheel --wheel-dir /wheels -r /build/requirements.lock \
+    && pip wheel --wheel-dir /wheels --no-deps /build
 
 
 FROM python:3.11-slim
@@ -34,7 +35,7 @@ RUN addgroup --system appgroup \
     && adduser --system --ingroup appgroup --home /app appuser
 
 COPY --from=builder /wheels /wheels
-RUN python -m pip install --upgrade pip \
+RUN python -m pip install --upgrade pip==25.2 \
     && pip install /wheels/*.whl
 
 COPY app /app/app
@@ -49,4 +50,4 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=\"${FORWARDED_ALLOW_IPS:-127.0.0.1}\""]

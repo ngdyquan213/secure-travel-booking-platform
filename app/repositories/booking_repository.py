@@ -92,6 +92,14 @@ class BookingRepository:
             .first()
         )
 
+    def get_by_id_for_update(self, booking_id: str) -> Booking | None:
+        return (
+            self.db.query(Booking)
+            .filter(Booking.id == booking_id)
+            .with_for_update()
+            .first()
+        )
+
     def get_traveler_by_id_and_user_id(self, traveler_id: str, user_id: str) -> Traveler | None:
         return (
             self.db.query(Traveler)

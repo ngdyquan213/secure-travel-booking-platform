@@ -196,7 +196,41 @@ def test_upload_accepts_valid_file(client, db_session, monkeypatch, tmp_path, sa
     assert "stored_filename" not in body
 
 
-def test_upload_persists_absolute_path_and_checksum(
+def test_upload_rejects_malware_signature_when_scan_enabled(
+    client, db_session, monkeypatch, tmp_path
+):
+    from app.core import config as config_module
+
+    monkeypatch.setattr(config_module.settings, "LOCAL_UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(config_module.settings, "UPLOAD_MALWARE_SCAN_ENABLED", True)
+    monkeypatch.setattr(config_module.settings, "UPLOAD_MALWARE_SCAN_BACKEND", "mock")
+
+    _, token = create_user_and_login(
+        client,
+        db_session,
+        email="upload-malware@example.com",
+        username="upload_malware",
+    )
+
+    malware_like_pdf = (
+        b"%PDF-1.4\n"
+        b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE"
+    )
+
+    resp = client.post(
+        "/api/v1/uploads/documents",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("passport.pdf", BytesIO(malware_like_pdf), "application/pdf")},
+        data={"document_type": "passport"},
+    )
+
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["message"] == "Uploaded file failed malware scan"
+
+
+def test_upload_persists_storage_key_and_checksum(
     client, db_session, monkeypatch, tmp_path, sample_pdf_bytes
 ):
     from app.core import config as config_module
@@ -226,8 +260,8 @@ def test_upload_persists_absolute_path_and_checksum(
         .first()
     )
     assert document is not None
-    assert Path(document.storage_key).is_absolute()
-    assert Path(document.storage_key).parent == tmp_path.resolve()
+    assert not Path(document.storage_key).is_absolute()
+    assert (tmp_path.resolve() / document.storage_key).exists()
     assert document.checksum_sha256 == hashlib.sha256(sample_pdf_bytes).hexdigest()
 
 

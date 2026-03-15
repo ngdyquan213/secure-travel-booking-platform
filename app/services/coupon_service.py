@@ -11,11 +11,12 @@ from app.models.enums import BookingItemType, CouponApplicableProductType, Coupo
 from app.repositories.booking_repository import BookingRepository
 from app.repositories.coupon_repository import CouponRepository
 from app.schemas.coupon import CouponApplyRequest
+from app.services.application_service import ApplicationService
 from app.services.audit_service import AuditService
 from app.utils.enums import enum_to_str
 
 
-class CouponService:
+class CouponService(ApplicationService):
     def __init__(
         self,
         db: Session,
@@ -162,12 +163,5 @@ class CouponService:
                 },
             )
 
-        try:
-            self.db.commit()
-        except Exception:
-            self.db.rollback()
-            raise
-
-        self.db.refresh(booking)
-        self.db.refresh(coupon)
+        self.commit_and_refresh(booking, coupon)
         return booking, coupon

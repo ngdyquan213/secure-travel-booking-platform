@@ -1,21 +1,14 @@
----
-
-# `docs/erd.md`
-
-```md
 # Entity Relationship Diagram (ERD) - Secure Travel Booking Platform
 
 ## 1. Overview
 
 Tài liệu này mô tả các thực thể dữ liệu chính và quan hệ giữa chúng trong Secure Travel Booking Platform.
 
----
-
 ## 2. Main Entities
 
-## Identity & Access
+### Identity & Access
 
-### users
+#### users
 Lưu thông tin tài khoản người dùng.
 
 Các cột chính:
@@ -36,7 +29,7 @@ Các cột chính:
 - created_at
 - updated_at
 
-### roles
+#### roles
 Lưu vai trò hệ thống.
 
 Các cột chính:
@@ -45,7 +38,7 @@ Các cột chính:
 - description
 - created_at
 
-### user_roles
+#### user_roles
 Bảng nối users và roles.
 
 Các cột chính:
@@ -54,26 +47,24 @@ Các cột chính:
 - assigned_at
 - assigned_by
 
-### refresh_tokens
+#### refresh_tokens
 Refresh token của user.
 
-### password_reset_tokens
+#### password_reset_tokens
 Password reset token của user.
 
-### login_attempts
+#### login_attempts
 Log các lần login thành công/thất bại.
 
----
+### Travel Inventory
 
-## Travel Inventory
-
-### airlines
+#### airlines
 Thông tin hãng bay.
 
-### airports
+#### airports
 Thông tin sân bay.
 
-### flights
+#### flights
 Thông tin chuyến bay.
 
 Khóa ngoại:
@@ -81,20 +72,18 @@ Khóa ngoại:
 - departure_airport_id -> airports.id
 - arrival_airport_id -> airports.id
 
-### hotels
+#### hotels
 Thông tin khách sạn.
 
-### hotel_rooms
+#### hotel_rooms
 Thông tin loại phòng.
 
 Khóa ngoại:
 - hotel_id -> hotels.id
 
----
+### Booking Domain
 
-## Booking Domain
-
-### bookings
+#### bookings
 Thực thể booking trung tâm.
 
 Khóa ngoại:
@@ -113,7 +102,7 @@ Các thuộc tính chính:
 - expires_at
 - cancelled_at
 
-### booking_items
+#### booking_items
 Chi tiết item trong booking.
 
 Khóa ngoại:
@@ -124,18 +113,17 @@ Khóa ngoại:
 Một booking có thể chứa:
 - flight item
 - hotel item
+- tour item
 
-### travelers
+#### travelers
 Thông tin traveler/guest liên quan booking.
 
 Khóa ngoại:
 - booking_id -> bookings.id
 
----
+### Coupon Domain
 
-## Coupon Domain
-
-### coupons
+#### coupons
 Thông tin coupon.
 
 Khóa ngoại:
@@ -144,6 +132,7 @@ Khóa ngoại:
 Các thuộc tính chính:
 - code
 - coupon_type
+- applicable_product_type
 - discount_value
 - max_discount_amount
 - min_booking_amount
@@ -154,7 +143,7 @@ Các thuộc tính chính:
 - expires_at
 - is_active
 
-### coupon_usages
+#### coupon_usages
 Bản ghi coupon đã dùng.
 
 Khóa ngoại:
@@ -162,11 +151,9 @@ Khóa ngoại:
 - user_id -> users.id
 - booking_id -> bookings.id
 
----
+### Payment Domain
 
-## Payment Domain
-
-### payments
+#### payments
 Thông tin payment cho booking.
 
 Khóa ngoại:
@@ -185,13 +172,13 @@ Các thuộc tính chính:
 - failed_at
 - failure_reason
 
-### payment_transactions
+#### payment_transactions
 Lịch sử sự kiện payment.
 
 Khóa ngoại:
 - payment_id -> payments.id
 
-### payment_callbacks
+#### payment_callbacks
 Lịch sử callback gateway.
 
 Khóa ngoại:
@@ -205,11 +192,9 @@ Các thuộc tính chính:
 - received_at
 - source_ip
 
----
+### Document & Async Domain
 
-## Document Domain
-
-### uploaded_documents
+#### uploaded_documents
 Metadata tài liệu người dùng upload.
 
 Khóa ngoại:
@@ -230,11 +215,26 @@ Các thuộc tính chính:
 - uploaded_at
 - deleted_at
 
----
+#### outbox_events
+Hàng đợi side effect bền vững cho email/notification.
 
-## Monitoring & Security
+Các thuộc tính chính:
+- target
+- handler
+- payload
+- status
+- attempt_count
+- available_at
+- claim_token
+- claimed_by
+- processing_started_at
+- lease_expires_at
+- processed_at
+- last_error
 
-### audit_logs
+### Monitoring & Security
+
+#### audit_logs
 Log hành động hệ thống / user / admin / service.
 
 Khóa ngoại:
@@ -251,7 +251,7 @@ Các thuộc tính chính:
 - metadata
 - created_at
 
-### security_events
+#### security_events
 Sự kiện an ninh.
 
 Khóa ngoại:
@@ -266,17 +266,15 @@ Các thuộc tính chính:
 - event_data
 - detected_at
 
-### app_settings
+#### app_settings
 Cấu hình hệ thống.
 
 Khóa ngoại:
 - updated_by -> users.id (nullable)
 
----
-
 ## 3. Relationship Summary
 
-## User Relationships
+### User Relationships
 
 - `users` 1 -> N `bookings`
 - `users` 1 -> N `coupon_usages`
@@ -284,12 +282,9 @@ Khóa ngoại:
 - `users` 1 -> N `audit_logs`
 - `users` 1 -> N `security_events`
 - `users` 1 -> N `payments` (initiated_by)
-- `users` 1 -> N `created_coupons`
 - `users` N -> N `roles` qua `user_roles`
 
----
-
-## Booking Relationships
+### Booking Relationships
 
 - `bookings` 1 -> N `booking_items`
 - `bookings` 1 -> N `travelers`
@@ -298,45 +293,11 @@ Khóa ngoại:
 - `bookings` 0..1 -> 1 `coupons`
 - `bookings` 1 -> N `coupon_usages`
 
----
-
-## Flight Relationships
-
-- `airlines` 1 -> N `flights`
-- `airports` 1 -> N `flights` (departure)
-- `airports` 1 -> N `flights` (arrival)
-- `flights` 1 -> N `booking_items`
-
----
-
-## Hotel Relationships
-
-- `hotels` 1 -> N `hotel_rooms`
-- `hotel_rooms` 1 -> N `booking_items`
-
----
-
-## Coupon Relationships
-
-- `coupons` 1 -> N `coupon_usages`
-- `coupons` 1 -> N `bookings`
-
----
-
-## Payment Relationships
+### Payment & Async Relationships
 
 - `payments` 1 -> N `payment_transactions`
 - `payments` 1 -> N `payment_callbacks`
-
----
-
-## Document Relationships
-
-- `uploaded_documents` N -> 1 `users`
-- `uploaded_documents` N -> 0..1 `bookings`
-- `uploaded_documents` N -> 0..1 `travelers`
-
----
+- `outbox_events` lưu side effects hậu commit, không khóa ngoại trực tiếp tới nghiệp vụ
 
 ## 4. Text ERD View
 
@@ -348,7 +309,6 @@ users ---< uploaded_documents
 users ---< audit_logs
 users ---< security_events
 users ---< payments (initiated_by)
-users ---< coupons (created_by)
 
 airlines ---< flights
 airports ---< flights (departure)
@@ -371,3 +331,4 @@ payments ---< payment_transactions
 payments ---< payment_callbacks
 
 travelers ---< uploaded_documents
+```

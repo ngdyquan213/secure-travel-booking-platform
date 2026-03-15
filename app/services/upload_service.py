@@ -1,21 +1,22 @@
 from __future__ import annotations
 
-import hashlib
 import logging
-from pathlib import Path
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.exceptions import NotFoundAppException, ValidationAppException
+from app.core.logging import build_log_extra
 from app.models.document import UploadedDocument
 from app.models.enums import DocumentType, LogActorType
 from app.repositories.booking_repository import BookingRepository
 from app.repositories.document_repository import DocumentRepository
+from app.services.application_service import ApplicationService
 from app.services.audit_service import AuditService
+from app.services.malware_scan_service import MalwareScanService
+from app.services.storage_service import StorageService
 from app.utils.file_utils import (
-    generate_stored_filename,
     normalize_upload_filename,
     validate_file,
     validate_file_signature,
@@ -24,21 +25,23 @@ from app.utils.ip_utils import normalize_ip
 
 logger = logging.getLogger("app.upload")
 
-CHUNK_SIZE = 1024 * 1024
 
-
-class UploadService:
+class UploadService(ApplicationService):
     def __init__(
         self,
         db: Session,
         document_repo: DocumentRepository,
         audit_service: AuditService,
         booking_repo: BookingRepository | None = None,
+        storage_service: StorageService | None = None,
+        malware_scan_service: MalwareScanService | None = None,
     ) -> None:
         self.db = db
         self.document_repo = document_repo
         self.audit_service = audit_service
         self.booking_repo = booking_repo or BookingRepository(db)
+        self.storage_service = storage_service or StorageService()
+        self.malware_scan_service = malware_scan_service or MalwareScanService()
 
     def _validate_booking_and_traveler_relation(
         self,
@@ -67,37 +70,6 @@ class UploadService:
             resolved_traveler_id = traveler_id
 
         return resolved_booking_id, resolved_traveler_id
-
-    def _save_upload_to_disk(self, file: UploadFile, destination: Path) -> tuple[int, str]:
-        total_written = 0
-        checksum = hashlib.sha256()
-
-        try:
-            with open(destination, "wb") as out:
-                while True:
-                    chunk = file.file.read(CHUNK_SIZE)
-                    if not chunk:
-                        break
-
-                    total_written += len(chunk)
-                    if total_written > settings.MAX_UPLOAD_SIZE_BYTES:
-                        raise ValidationAppException("Uploaded file exceeds maximum allowed size")
-
-                    checksum.update(chunk)
-                    out.write(chunk)
-        except Exception:
-            if destination.exists():
-                destination.unlink(missing_ok=True)
-            raise
-        finally:
-            file.file.seek(0)
-
-        if total_written == 0:
-            destination.unlink(missing_ok=True)
-            raise ValidationAppException("Uploaded file is empty")
-
-        return total_written, checksum.hexdigest()
-
     def upload_document(
         self,
         *,
@@ -123,23 +95,32 @@ class UploadService:
             traveler_id=traveler_id,
         )
 
-        upload_dir = Path(settings.LOCAL_UPLOAD_DIR).resolve()
-        upload_dir.mkdir(parents=True, exist_ok=True)
-
-        stored_filename = generate_stored_filename(original_filename)
-        storage_path = upload_dir / stored_filename
         normalized_ip = normalize_ip(ip_address)
 
         logger.info(
-            "upload_started | filename=%s mime_type=%s user_id=%s booking_id=%s traveler_id=%s",
-            original_filename,
-            file.content_type,
-            user_id,
-            booking_id,
-            traveler_id,
+            "upload_started",
+            extra=build_log_extra(
+                "upload_started",
+                filename=original_filename,
+                mime_type=file.content_type,
+                user_id=user_id,
+                booking_id=booking_id,
+                traveler_id=traveler_id,
+                malware_scan_enabled=settings.UPLOAD_MALWARE_SCAN_ENABLED,
+                malware_scan_backend=settings.UPLOAD_MALWARE_SCAN_BACKEND,
+            ),
         )
 
-        file_size, checksum_sha256 = self._save_upload_to_disk(file, storage_path)
+        self.malware_scan_service.scan_upload(
+            file=file,
+            original_filename=original_filename,
+            mime_type=file.content_type or "application/octet-stream",
+        )
+
+        stored_object = self.storage_service.store_upload(
+            file=file,
+            original_filename=original_filename,
+        )
 
         try:
             document = UploadedDocument(
@@ -148,12 +129,12 @@ class UploadService:
                 traveler_id=traveler_id,
                 document_type=document_type,
                 original_filename=original_filename,
-                stored_filename=stored_filename,
+                stored_filename=stored_object.stored_filename,
                 mime_type=file.content_type or "application/octet-stream",
-                file_size=file_size,
-                storage_bucket="local",
-                storage_key=str(storage_path),
-                checksum_sha256=checksum_sha256,
+                file_size=stored_object.file_size,
+                storage_bucket=stored_object.storage_bucket,
+                storage_key=stored_object.storage_key,
+                checksum_sha256=stored_object.checksum_sha256,
                 is_private=True,
             )
             self.document_repo.add_document(document)
@@ -172,24 +153,32 @@ class UploadService:
                     "original_filename": document.original_filename,
                     "booking_id": booking_id,
                     "traveler_id": traveler_id,
-                    "storage_key": str(storage_path),
-                    "file_size": file_size,
+                    "storage_bucket": stored_object.storage_bucket,
+                    "storage_key": stored_object.storage_key,
+                    "file_size": stored_object.file_size,
                 },
             )
 
-            self.db.commit()
-            self.db.refresh(document)
+            self.commit_and_refresh(document)
         except Exception:
             self.db.rollback()
-            storage_path.unlink(missing_ok=True)
+            self.storage_service.delete_object(
+                storage_bucket=stored_object.storage_bucket,
+                storage_key=stored_object.storage_key,
+            )
             raise
 
         logger.info(
-            "upload_completed | document_id=%s filename=%s file_size=%s user_id=%s",
-            document.id,
-            document.original_filename,
-            file_size,
-            user_id,
+            "upload_completed",
+            extra=build_log_extra(
+                "upload_completed",
+                document_id=str(document.id),
+                filename=document.original_filename,
+                file_size=stored_object.file_size,
+                user_id=user_id,
+                malware_scan_enabled=settings.UPLOAD_MALWARE_SCAN_ENABLED,
+                malware_scan_backend=settings.UPLOAD_MALWARE_SCAN_BACKEND,
+            ),
         )
 
         return document
@@ -209,9 +198,10 @@ class UploadService:
         if not document:
             raise NotFoundAppException("Document not found")
 
-        file_path = Path(document.storage_key)
-        if not file_path.exists():
-            raise NotFoundAppException("Document file not found")
+        if document.storage_bucket == settings.LOCAL_STORAGE_BUCKET:
+            file_path = self.storage_service.resolve_local_path(document.storage_key)
+            if not file_path.exists():
+                raise NotFoundAppException("Document file not found")
 
         normalized_ip = normalize_ip(ip_address)
 
@@ -225,6 +215,6 @@ class UploadService:
             user_agent=user_agent,
             metadata={"storage_key": document.storage_key},
         )
-        self.db.commit()
+        self.commit()
 
         return document

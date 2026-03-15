@@ -1,4 +1,5 @@
 import os
+from importlib import import_module
 
 import pytest
 from fastapi.testclient import TestClient
@@ -6,17 +7,22 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import sessionmaker
 
-from app.core.database import get_db
-from app.main import app
-from app.models.base import Base
-
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
     f"postgresql+psycopg2://postgres:postgres@localhost:5432/secure_travel_booking_test_{os.getpid()}",
 )
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+
+database_module = import_module("app.core.database")
+main_module = import_module("app.main")
+run_migrations = import_module("tests.alembic_utils").run_migrations
+
+os.environ.pop("DATABASE_URL", None)
 
 engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+get_db = database_module.get_db
+app = main_module.app
 
 
 def recreate_test_database():
@@ -36,7 +42,11 @@ def recreate_test_database():
         database=admin_db_name,
     )
 
-    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    admin_engine = create_engine(
+        admin_url,
+        isolation_level="AUTOCOMMIT",
+        connect_args={"connect_timeout": 2},
+    )
     with admin_engine.connect() as conn:
         conn.execute(
             text(
@@ -55,10 +65,14 @@ def recreate_test_database():
 
 @pytest.fixture(scope="session")
 def setup_postgres_test_db():
-    recreate_test_database()
-    with engine.connect() as conn:
-        Base.metadata.create_all(bind=conn)
-        conn.commit()
+    try:
+        recreate_test_database()
+        run_migrations(TEST_DATABASE_URL)
+    except Exception:
+        pytest.skip(
+            "PostgreSQL is not available for postgres-marked tests. "
+            "Start infra/docker/docker-compose.test.yml and rerun pytest."
+        )
     yield
 
 
@@ -88,14 +102,14 @@ def client_pg(db_session_pg):
     app.dependency_overrides[get_db] = override_get_db
 
     try:
-        with TestClient(app) as client:
+        with TestClient(app, client=("127.0.0.1", 50000)) as client:
             yield client
     finally:
         app.dependency_overrides.clear()
 
 
 @pytest.fixture()
-def postgres_healthcheck():
+def postgres_healthcheck(setup_postgres_test_db):
     with engine.connect() as conn:
         result = conn.execute(text("SELECT 1")).scalar()
     return result

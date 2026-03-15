@@ -156,3 +156,49 @@ def test_payment_callback_invalid_signature(client, db_session):
     )
     assert callback_resp.status_code == 400
     assert callback_resp.json()["detail"] == "Invalid callback signature"
+
+
+def test_payment_callback_rejects_source_outside_allowlist(client, db_session, monkeypatch):
+    from app.core import config as config_module
+
+    monkeypatch.setattr(
+        config_module.settings,
+        "PAYMENT_CALLBACK_SOURCE_ALLOWLIST",
+        "203.0.113.10/32",
+    )
+
+    user, token = create_user_and_login(client, db_session, "cb3@example.com", "cb3")
+    booking = seed_booking(db_session, str(user.id))
+
+    init_resp = client.post(
+        "/api/v1/payments/initiate",
+        json={"booking_id": str(booking.id), "payment_method": "vnpay"},
+        headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "cb-idem-3"},
+    )
+    assert init_resp.status_code == 201
+    payment = init_resp.json()
+
+    signature = build_payment_callback_signature(
+        gateway_name="vnpay",
+        gateway_order_ref=payment["gateway_order_ref"],
+        gateway_transaction_ref="TXN-CB-003",
+        amount="2000000.00",
+        currency="VND",
+        status="paid",
+    )
+
+    callback_resp = client.post(
+        "/api/v1/payments/callback",
+        json={
+            "gateway_name": "vnpay",
+            "gateway_order_ref": payment["gateway_order_ref"],
+            "gateway_transaction_ref": "TXN-CB-003",
+            "amount": "2000000.00",
+            "currency": "VND",
+            "status": "paid",
+            "signature": signature,
+        },
+    )
+
+    assert callback_resp.status_code == 400
+    assert callback_resp.json()["detail"] == "Callback source is not allowed"

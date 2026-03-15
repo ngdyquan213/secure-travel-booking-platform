@@ -71,14 +71,35 @@ def test_check_redis_connection_fail(monkeypatch):
         startup_module.check_redis_connection()
 
 
+def test_check_storage_connection_ok(monkeypatch):
+    from app.core import startup as startup_module
+
+    monkeypatch.setattr(startup_module, "is_storage_connection_ready", lambda: True)
+
+    startup_module.check_storage_connection()
+
+
+def test_check_storage_connection_fail(monkeypatch):
+    from app.core import startup as startup_module
+
+    monkeypatch.setattr(startup_module, "is_storage_connection_ready", lambda: False)
+
+    with pytest.raises(RuntimeError, match="Storage connection check failed"):
+        startup_module.check_storage_connection()
+
+
 def test_run_startup_checks_runs_all(monkeypatch):
     from app.core import startup as startup_module
 
     called = {
         "summary": False,
         "dirs": False,
+        "storage": False,
         "db": False,
         "redis": False,
+        "email": False,
+        "notification": False,
+        "malware": False,
     }
 
     monkeypatch.setattr(
@@ -88,10 +109,28 @@ def test_run_startup_checks_runs_all(monkeypatch):
         startup_module, "ensure_local_directories", lambda: called.__setitem__("dirs", True)
     )
     monkeypatch.setattr(
+        startup_module, "check_storage_connection", lambda: called.__setitem__("storage", True)
+    )
+    monkeypatch.setattr(
         startup_module, "check_database_connection", lambda: called.__setitem__("db", True)
     )
     monkeypatch.setattr(
         startup_module, "check_redis_connection", lambda: called.__setitem__("redis", True)
+    )
+    monkeypatch.setattr(
+        startup_module,
+        "check_email_worker_connection",
+        lambda: called.__setitem__("email", True),
+    )
+    monkeypatch.setattr(
+        startup_module,
+        "check_notification_backend_connection",
+        lambda: called.__setitem__("notification", True),
+    )
+    monkeypatch.setattr(
+        startup_module,
+        "check_malware_scan_connection",
+        lambda: called.__setitem__("malware", True),
     )
 
     startup_module.run_startup_checks()
@@ -99,6 +138,10 @@ def test_run_startup_checks_runs_all(monkeypatch):
     assert called == {
         "summary": True,
         "dirs": True,
+        "storage": True,
         "db": True,
         "redis": True,
+        "email": True,
+        "notification": True,
+        "malware": True,
     }

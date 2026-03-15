@@ -19,27 +19,35 @@ from app.models.enums import (
 from app.repositories.booking_repository import BookingRepository
 from app.repositories.tour_repository import TourRepository
 from app.schemas.booking import TourBookingCreateRequest
+from app.services.application_service import ApplicationService
 from app.services.audit_service import AuditService
+from app.services.outbox_service import OutboxService
 from app.workers.email_worker import EmailWorker
 from app.workers.notification_worker import NotificationWorker
 
 
-class TourBookingService:
+class TourBookingService(ApplicationService):
     def __init__(
         self,
         db: Session,
         booking_repo: BookingRepository,
         tour_repo: TourRepository,
         audit_service: AuditService,
-        email_worker: EmailWorker | None = None,
-        notification_worker: NotificationWorker | None = None,
+        email_worker: EmailWorker,
+        notification_worker: NotificationWorker,
+        outbox_service: OutboxService | None = None,
     ) -> None:
         self.db = db
         self.booking_repo = booking_repo
         self.tour_repo = tour_repo
         self.audit_service = audit_service
-        self.email_worker = email_worker or EmailWorker()
-        self.notification_worker = notification_worker or NotificationWorker()
+        self.email_worker = email_worker
+        self.notification_worker = notification_worker
+        self.outbox_service = outbox_service or OutboxService(
+            db=db,
+            email_worker=email_worker,
+            notification_worker=notification_worker,
+        )
 
     def create_tour_booking(
         self,
@@ -132,27 +140,26 @@ class TourBookingService:
                 },
             )
 
-        try:
-            self.db.commit()
-        except Exception:
-            self.db.rollback()
-            raise
-
-        self.db.refresh(booking)
-
         if user_email and user_full_name:
-            self.email_worker.send_booking_created_email(
-                to_email=user_email,
-                full_name=user_full_name,
-                booking_code=booking.booking_code,
-                total_amount=str(booking.total_final_amount),
-                currency=booking.currency,
+            self.outbox_service.enqueue_email(
+                handler="send_booking_created_email",
+                kwargs={
+                    "to_email": user_email,
+                    "full_name": user_full_name,
+                    "booking_code": booking.booking_code,
+                    "total_amount": str(booking.total_final_amount),
+                    "currency": booking.currency,
+                },
             )
 
-        self.notification_worker.notify_booking_created(
-            user_id=str(booking.user_id),
-            booking_id=str(booking.id),
-            booking_code=booking.booking_code,
+        self.outbox_service.enqueue_notification(
+            handler="notify_booking_created",
+            kwargs={
+                "user_id": str(booking.user_id),
+                "booking_id": str(booking.id),
+                "booking_code": booking.booking_code,
+            },
         )
 
+        self.commit_and_refresh(booking)
         return booking

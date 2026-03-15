@@ -9,11 +9,12 @@ from app.models.booking import Traveler
 from app.models.enums import BookingItemType, LogActorType
 from app.repositories.booking_repository import BookingRepository
 from app.schemas.traveler import TravelerCreateRequest
+from app.services.application_service import ApplicationService
 from app.services.audit_service import AuditService
 from app.utils.enums import enum_to_str
 
 
-class TravelerService:
+class TravelerService(ApplicationService):
     def __init__(
         self,
         db: Session,
@@ -104,11 +105,5 @@ class TravelerService:
                 },
             )
 
-        try:
-            self.db.commit()
-        except Exception:
-            self.db.rollback()
-            raise
-
-        self.db.refresh(traveler)
+        self.commit_and_refresh(traveler)
         return traveler

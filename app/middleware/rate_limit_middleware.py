@@ -8,6 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from app.core.config import settings
+from app.core.metrics import operational_metrics
 from app.core.redis import redis_client
 from app.utils.request_context import get_client_ip
 
@@ -65,6 +66,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
             ttl = redis_client.ttl(key)
         except Exception:
+            operational_metrics.record_rate_limit_backend_failure()
             if self._should_fail_closed(request.url.path):
                 payload = {
                     "error_code": "RATE_LIMIT_UNAVAILABLE",

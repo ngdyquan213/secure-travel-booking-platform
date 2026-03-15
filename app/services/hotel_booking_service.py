@@ -12,10 +12,11 @@ from app.models.enums import BookingItemType, BookingStatus, LogActorType, Payme
 from app.repositories.booking_repository import BookingRepository
 from app.repositories.hotel_repository import HotelRepository
 from app.schemas.booking import HotelBookingCreateRequest
+from app.services.application_service import ApplicationService
 from app.services.audit_service import AuditService
 
 
-class HotelBookingService:
+class HotelBookingService(ApplicationService):
     def __init__(
         self,
         db: Session,
@@ -111,11 +112,5 @@ class HotelBookingService:
                 },
             )
 
-        try:
-            self.db.commit()
-        except Exception:
-            self.db.rollback()
-            raise
-
-        self.db.refresh(booking)
+        self.commit_and_refresh(booking)
         return booking

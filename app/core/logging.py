@@ -32,7 +32,43 @@ class JsonFormatter(logging.Formatter):
             if hasattr(record, attr):
                 payload[attr] = getattr(record, attr)
 
+        event_name = getattr(record, "event_name", None)
+        if event_name:
+            payload["event"] = event_name
+
+        structured_data = getattr(record, "structured_data", None)
+        if isinstance(structured_data, dict):
+            payload.update(structured_data)
+
         return json.dumps(payload, ensure_ascii=False)
+
+
+class StructuredDebugFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        message = super().format(record)
+
+        event_name = getattr(record, "event_name", None)
+        structured_data = getattr(record, "structured_data", None)
+        details: list[str] = []
+
+        if event_name:
+            details.append(f"event={event_name}")
+
+        if isinstance(structured_data, dict):
+            details.extend(
+                f"{key}={value}" for key, value in structured_data.items() if value is not None
+            )
+
+        if details:
+            return f"{message} | {' '.join(details)}"
+        return message
+
+
+def build_log_extra(event_name: str, **structured_data):
+    return {
+        "event_name": event_name,
+        "structured_data": structured_data,
+    }
 
 
 def configure_logging(debug: bool = True) -> None:
@@ -46,7 +82,7 @@ def configure_logging(debug: bool = True) -> None:
     handler.addFilter(RequestContextFilter())
 
     if debug:
-        formatter = logging.Formatter(
+        formatter = StructuredDebugFormatter(
             fmt="%(asctime)s | %(levelname)s | %(name)s | request_id=%(request_id)s | %(message)s"
         )
     else:
@@ -55,7 +91,7 @@ def configure_logging(debug: bool = True) -> None:
     handler.setFormatter(formatter)
     root_logger.addHandler(handler)
 
-    logging.getLogger("uvicorn").handlers = [handler]
-    logging.getLogger("uvicorn.access").handlers = [handler]
-    logging.getLogger("uvicorn.error").handlers = [handler]
-    logging.getLogger("fastapi").handlers = [handler]
+    for logger_name in ("uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"):
+        logger = logging.getLogger(logger_name)
+        logger.handlers = [handler]
+        logger.propagate = False

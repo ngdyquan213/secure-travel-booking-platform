@@ -20,7 +20,9 @@ from app.repositories.audit_repository import AuditRepository
 from app.repositories.booking_repository import BookingRepository
 from app.repositories.payment_repository import PaymentRepository
 from app.services.audit_service import AuditService
+from app.services.payment_callback_domain_service import PaymentCallbackDomainService
 from app.services.payment_callback_service import PaymentCallbackService
+from app.workers.email_worker import EmailWorker
 
 
 def create_user_and_login(
@@ -188,6 +190,8 @@ def test_payment_callback_rolls_back_if_payment_save_fails(db_engine, monkeypatc
         booking_repo=BookingRepository(callback_session),
         payment_repo=PaymentRepository(callback_session),
         audit_service=AuditService(AuditRepository(callback_session)),
+        email_worker=EmailWorker(),
+        domain_service=PaymentCallbackDomainService(),
     )
 
     payload = {
@@ -315,6 +319,8 @@ def test_payment_callback_persists_across_sessions(db_engine):
         booking_repo=BookingRepository(callback_session),
         payment_repo=PaymentRepository(callback_session),
         audit_service=AuditService(AuditRepository(callback_session)),
+        email_worker=EmailWorker(),
+        domain_service=PaymentCallbackDomainService(),
     )
 
     payload = {
@@ -351,3 +357,98 @@ def test_payment_callback_persists_across_sessions(db_engine):
     ) == "paid"
     assert len(persisted_callbacks) == 1
     verify_session.close()
+
+
+def test_payment_callback_uses_locked_booking_and_payment_lookup(db_engine, monkeypatch):
+    SessionLocal = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+
+    seed_session = SessionLocal()
+    user = User(
+        email="lock-callback@example.com",
+        username="lock_callback",
+        full_name="Lock Callback",
+        password_hash=get_password_hash("Password123"),
+        status=UserStatus.active,
+        email_verified=True,
+        phone_verified=False,
+        failed_login_count=0,
+    )
+    seed_session.add(user)
+    seed_session.commit()
+
+    booking = seed_booking_for_payment(seed_session, str(user.id))
+    payment = Payment(
+        booking_id=booking.id,
+        initiated_by=user.id,
+        payment_method=PaymentMethod.vnpay,
+        status=PaymentStatus.pending,
+        amount=Decimal("1000000.00"),
+        currency="VND",
+        gateway_order_ref="PAY-LOCK-LOOKUP-001",
+        gateway_transaction_ref=None,
+        idempotency_key="lock-lookup-idem-001",
+        paid_at=None,
+    )
+    seed_session.add(payment)
+    seed_session.commit()
+    payment_id = str(payment.id)
+    booking_id = str(booking.id)
+    seed_session.close()
+
+    callback_session = SessionLocal()
+    booking_repo = BookingRepository(callback_session)
+    payment_repo = PaymentRepository(callback_session)
+    booking_locked_calls: list[str] = []
+    payment_locked_calls: list[str] = []
+    original_booking_locked_lookup = booking_repo.get_by_id_for_update
+    original_payment_locked_lookup = payment_repo.get_by_id_for_update
+
+    def fail_unlocked_booking_lookup(*args, **kwargs):
+        raise AssertionError("callback flow must use locked booking lookup")
+
+    def fail_old_payment_lock_lookup(*args, **kwargs):
+        raise AssertionError("callback flow should no longer lock by gateway ref directly")
+
+    def track_locked_booking_lookup(booking_id_value: str):
+        booking_locked_calls.append(booking_id_value)
+        return original_booking_locked_lookup(booking_id_value)
+
+    def track_locked_payment_lookup(payment_id_value: str):
+        payment_locked_calls.append(payment_id_value)
+        return original_payment_locked_lookup(payment_id_value)
+
+    monkeypatch.setattr(booking_repo, "get_by_id", fail_unlocked_booking_lookup)
+    monkeypatch.setattr(booking_repo, "get_by_id_for_update", track_locked_booking_lookup)
+    monkeypatch.setattr(
+        payment_repo,
+        "get_by_gateway_order_ref_for_update",
+        fail_old_payment_lock_lookup,
+    )
+    monkeypatch.setattr(payment_repo, "get_by_id_for_update", track_locked_payment_lookup)
+
+    service = PaymentCallbackService(
+        db=callback_session,
+        booking_repo=booking_repo,
+        payment_repo=payment_repo,
+        audit_service=AuditService(AuditRepository(callback_session)),
+        email_worker=EmailWorker(),
+        domain_service=PaymentCallbackDomainService(),
+    )
+
+    payload = {
+        "gateway_name": "vnpay",
+        "gateway_order_ref": "PAY-LOCK-LOOKUP-001",
+        "gateway_transaction_ref": "TXN-LOCK-LOOKUP-001",
+        "amount": "1000000.00",
+        "currency": "VND",
+        "status": "paid",
+    }
+    payload["signature"] = build_payment_callback_signature(**payload)
+
+    try:
+        service.process_callback(**payload)
+    finally:
+        callback_session.close()
+
+    assert booking_locked_calls == [booking_id]
+    assert payment_locked_calls == [payment_id]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ipaddress import ip_network
 from typing import Literal
 
 from pydantic import field_validator, model_validator
@@ -36,10 +37,39 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost,http://127.0.0.1"
     TRUSTED_HOSTS: str = "localhost,127.0.0.1,testserver"
 
-    STORAGE_BACKEND: Literal["local"] = "local"
+    STORAGE_BACKEND: Literal["local", "s3"] = "local"
     LOCAL_UPLOAD_DIR: str = "uploads"
+    LOCAL_STORAGE_BUCKET: str = "local"
     MAX_UPLOAD_SIZE_BYTES: int = 10 * 1024 * 1024
+    S3_BUCKET_NAME: str = ""
+    S3_REGION: str = ""
+    S3_ENDPOINT_URL: str = ""
+    S3_ACCESS_KEY_ID: str = ""
+    S3_SECRET_ACCESS_KEY: str = ""
+    OUTBOX_PROCESSING_BATCH_SIZE: int = 20
+    OUTBOX_LEASE_SECONDS: int = 30
+    OUTBOX_HEALTH_MODE: Literal["best_effort", "required"] = "best_effort"
+    RUNTIME_MAINTENANCE_INTERVAL_SECONDS: int = 60
+    EMAIL_WORKER_BACKEND: Literal["mock", "smtp"] = "mock"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_USE_TLS: bool = True
+    SMTP_TIMEOUT_SECONDS: int = 10
+    NOTIFICATION_WORKER_BACKEND: Literal["mock", "redis"] = "mock"
+    NOTIFICATION_REDIS_CHANNEL: str = "secure_travel.notifications"
+    FORWARDED_ALLOW_IPS: str = "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    PAYMENT_CALLBACK_SOURCE_ALLOWLIST: str = ""
     ALLOW_PAYMENT_SIMULATION: bool = False
+    UPLOAD_MALWARE_SCAN_ENABLED: bool = False
+    UPLOAD_MALWARE_SCAN_BACKEND: Literal["mock", "clamav"] = "mock"
+    CLAMAV_HOST: str = "localhost"
+    CLAMAV_PORT: int = 3310
+    CLAMAV_TIMEOUT_SECONDS: int = 10
+    SECRET_SOURCE: Literal["env", "secret_manager"] = "env"
+    SECRET_MANAGER_PROVIDER: str = ""
 
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
@@ -130,6 +160,55 @@ class Settings(BaseSettings):
             raise ValueError("MAX_UPLOAD_SIZE_BYTES must be > 0")
         return value
 
+    @field_validator("OUTBOX_PROCESSING_BATCH_SIZE")
+    @classmethod
+    def validate_outbox_processing_batch_size(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("OUTBOX_PROCESSING_BATCH_SIZE must be > 0")
+        return value
+
+    @field_validator("OUTBOX_LEASE_SECONDS")
+    @classmethod
+    def validate_outbox_lease_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("OUTBOX_LEASE_SECONDS must be > 0")
+        return value
+
+    @field_validator("RUNTIME_MAINTENANCE_INTERVAL_SECONDS")
+    @classmethod
+    def validate_runtime_maintenance_interval_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("RUNTIME_MAINTENANCE_INTERVAL_SECONDS must be > 0")
+        return value
+
+    @field_validator("CLAMAV_PORT")
+    @classmethod
+    def validate_clamav_port(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("CLAMAV_PORT must be > 0")
+        return value
+
+    @field_validator("CLAMAV_TIMEOUT_SECONDS")
+    @classmethod
+    def validate_clamav_timeout_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("CLAMAV_TIMEOUT_SECONDS must be > 0")
+        return value
+
+    @field_validator("SMTP_PORT")
+    @classmethod
+    def validate_smtp_port(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("SMTP_PORT must be > 0")
+        return value
+
+    @field_validator("SMTP_TIMEOUT_SECONDS")
+    @classmethod
+    def validate_smtp_timeout_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("SMTP_TIMEOUT_SECONDS must be > 0")
+        return value
+
     @field_validator("AUTH_MAX_FAILED_LOGINS")
     @classmethod
     def validate_auth_max_failed_logins(cls, value: int) -> int:
@@ -146,6 +225,51 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_environment_rules(self) -> Settings:
+        if self.STORAGE_BACKEND == "s3":
+            required_fields = (
+                ("S3_BUCKET_NAME", self.S3_BUCKET_NAME),
+                ("S3_REGION", self.S3_REGION),
+                ("S3_ACCESS_KEY_ID", self.S3_ACCESS_KEY_ID),
+                ("S3_SECRET_ACCESS_KEY", self.S3_SECRET_ACCESS_KEY),
+            )
+            missing = [field_name for field_name, value in required_fields if not value.strip()]
+            if missing:
+                raise ValueError(
+                    f"Missing required S3 settings for STORAGE_BACKEND=s3: {', '.join(missing)}"
+                )
+
+        if self.EMAIL_WORKER_BACKEND == "smtp":
+            required_fields = (
+                ("SMTP_HOST", self.SMTP_HOST),
+                ("SMTP_FROM_EMAIL", self.SMTP_FROM_EMAIL),
+            )
+            missing = [field_name for field_name, value in required_fields if not value.strip()]
+            if missing:
+                raise ValueError(
+                    "Missing required SMTP settings for EMAIL_WORKER_BACKEND=smtp: "
+                    + ", ".join(missing)
+                )
+
+        if not self.NOTIFICATION_REDIS_CHANNEL.strip():
+            raise ValueError("NOTIFICATION_REDIS_CHANNEL must not be empty")
+
+        for value in self.forwarded_allow_ips_list:
+            if value == "*":
+                continue
+            ip_network(value, strict=False)
+
+        for value in self.payment_callback_source_allowlist_list:
+            ip_network(value, strict=False)
+
+        if self.UPLOAD_MALWARE_SCAN_ENABLED and self.UPLOAD_MALWARE_SCAN_BACKEND == "clamav":
+            if not self.CLAMAV_HOST.strip():
+                raise ValueError("CLAMAV_HOST is required when malware scan backend is clamav")
+
+        if self.SECRET_SOURCE == "secret_manager" and not self.SECRET_MANAGER_PROVIDER.strip():  # nosec B105
+            raise ValueError(
+                "SECRET_MANAGER_PROVIDER is required when SECRET_SOURCE=secret_manager"
+            )
+
         if self.ENVIRONMENT in {"staging", "production"}:
             weak_secret_values = {
                 "change-me-super-secret-key",
@@ -174,8 +298,26 @@ class Settings(BaseSettings):
             if "localhost" in self.REDIS_URL or "127.0.0.1" in self.REDIS_URL:
                 raise ValueError("REDIS_URL should not point to localhost in staging/production")
 
+            if "*" in self.forwarded_allow_ips_list:
+                raise ValueError("FORWARDED_ALLOW_IPS must not contain '*' in staging/production")
+
             if self.ALLOW_PAYMENT_SIMULATION:
                 raise ValueError("ALLOW_PAYMENT_SIMULATION must be false in staging/production")
+
+            if self.EMAIL_WORKER_BACKEND == "mock":
+                raise ValueError(
+                    "EMAIL_WORKER_BACKEND must not use 'mock' in staging/production"
+                )
+
+            if self.NOTIFICATION_WORKER_BACKEND == "mock":
+                raise ValueError(
+                    "NOTIFICATION_WORKER_BACKEND must not use 'mock' in staging/production"
+                )
+
+            if not self.payment_callback_source_allowlist_list:
+                raise ValueError(
+                    "PAYMENT_CALLBACK_SOURCE_ALLOWLIST must not be empty in staging/production"
+                )
 
         return self
 
@@ -200,6 +342,18 @@ class Settings(BaseSettings):
         return [
             item.strip().lower()
             for item in self.ALLOWED_UPLOAD_MIME_TYPES.split(",")
+            if item.strip()
+        ]
+
+    @property
+    def forwarded_allow_ips_list(self) -> list[str]:
+        return [item.strip() for item in self.FORWARDED_ALLOW_IPS.split(",") if item.strip()]
+
+    @property
+    def payment_callback_source_allowlist_list(self) -> list[str]:
+        return [
+            item.strip()
+            for item in self.PAYMENT_CALLBACK_SOURCE_ALLOWLIST.split(",")
             if item.strip()
         ]
 

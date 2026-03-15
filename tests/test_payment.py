@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.core.config import settings
-from app.core.security import get_password_hash
+from app.core.security import build_payment_callback_signature, get_password_hash
 from app.models.booking import Booking, BookingItem
 from app.models.enums import (
     BookingItemType,
@@ -152,6 +152,71 @@ def test_payment_idempotency_returns_same_payment(client, db_session):
     assert body1["gateway_order_ref"] == body2["gateway_order_ref"]
 
 
+def test_payment_idempotency_rejects_different_payment_method(client, db_session):
+    user, token = create_user_and_login(
+        client,
+        db_session,
+        "payment-idem-mismatch@example.com",
+        "payment_idem_mismatch",
+    )
+    booking = seed_booking_for_user(db_session, str(user.id))
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": "idem-payment-mismatch-001",
+    }
+
+    first_resp = client.post(
+        "/api/v1/payments/initiate",
+        json={
+            "booking_id": str(booking.id),
+            "payment_method": "vnpay",
+        },
+        headers=headers,
+    )
+    second_resp = client.post(
+        "/api/v1/payments/initiate",
+        json={
+            "booking_id": str(booking.id),
+            "payment_method": "momo",
+        },
+        headers=headers,
+    )
+
+    assert first_resp.status_code == 201
+    assert second_resp.status_code == 409
+    assert second_resp.json()["message"] == (
+        "Idempotency key was already used with a different payment method"
+    )
+
+
+def test_payment_initiation_rejects_idempotency_key_that_would_overflow_gateway_reference(
+    client, db_session
+):
+    user, token = create_user_and_login(
+        client,
+        db_session,
+        "payment-idem-long@example.com",
+        "payment_idem_long",
+    )
+    booking = seed_booking_for_user(db_session, str(user.id))
+
+    response = client.post(
+        "/api/v1/payments/initiate",
+        json={
+            "booking_id": str(booking.id),
+            "payment_method": "vnpay",
+        },
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "x" * 256,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Idempotency key is too long"
+
+
 def test_simulate_success_updates_payment_and_booking(client, db_session, monkeypatch):
     monkeypatch.setattr(settings, "ALLOW_PAYMENT_SIMULATION", True)
 
@@ -229,6 +294,53 @@ def test_simulate_success_is_disabled_by_default(client, db_session):
     )
     assert disabled_resp.status_code == 404
     assert disabled_resp.json()["error_code"] == "NOT_FOUND"
+
+
+def test_simulate_success_rejects_non_pending_payment(client, db_session, monkeypatch):
+    monkeypatch.setattr(settings, "ALLOW_PAYMENT_SIMULATION", True)
+
+    user, token = create_user_and_login(
+        client,
+        db_session,
+        "payment-sim-guard@example.com",
+        "payment_sim_guard",
+    )
+    booking = seed_booking_for_user(db_session, str(user.id))
+
+    initiate_resp = client.post(
+        "/api/v1/payments/initiate",
+        json={
+            "booking_id": str(booking.id),
+            "payment_method": "momo",
+        },
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "idem-payment-sim-guard",
+        },
+    )
+    assert initiate_resp.status_code == 201
+
+    payment = initiate_resp.json()
+    callback_payload = {
+        "gateway_name": "momo",
+        "gateway_order_ref": payment["gateway_order_ref"],
+        "gateway_transaction_ref": "TXN-SIM-GUARD-001",
+        "amount": "1500000.00",
+        "currency": "VND",
+        "status": "failed",
+    }
+    callback_payload["signature"] = build_payment_callback_signature(**callback_payload)
+
+    callback_resp = client.post("/api/v1/payments/callback", json=callback_payload)
+    assert callback_resp.status_code == 200
+    assert callback_resp.json()["status"] == "failed"
+
+    simulate_resp = client.post(
+        f"/api/v1/payments/{payment['id']}/simulate-success",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert simulate_resp.status_code == 409
+    assert simulate_resp.json()["message"] == "Only pending payments can be simulated as successful"
 
 
 def test_user_cannot_initiate_payment_for_other_users_booking(client, db_session):

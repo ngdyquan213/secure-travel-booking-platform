@@ -1,8 +1,12 @@
 from io import BytesIO
+from pathlib import Path
+from types import SimpleNamespace
 
 from app.core.security import get_password_hash
-from app.models.enums import UserStatus
+from app.models.document import UploadedDocument
+from app.models.enums import DocumentType, UserStatus
 from app.models.user import User
+from app.services.storage_service import StorageService
 
 
 def create_user(client, db_session, email: str, username: str):
@@ -67,3 +71,54 @@ def test_document_download_returns_original_file(client, db_session, sample_pdf_
     assert download_resp.headers["content-type"].startswith("application/pdf")
     assert "passport.pdf" in download_resp.headers["content-disposition"]
     assert download_resp.content == sample_pdf_bytes
+
+
+def test_document_download_rejects_poisoned_absolute_storage_key(client, db_session, tmp_path):
+    user, token = create_user(client, db_session, "u4@example.com", "u4")
+    poisoned_file = tmp_path / "poisoned.pdf"
+    poisoned_file.write_bytes(b"not actually used")
+
+    document = UploadedDocument(
+        user_id=user.id,
+        booking_id=None,
+        traveler_id=None,
+        document_type=DocumentType.passport,
+        original_filename="passport.pdf",
+        stored_filename="passport.pdf",
+        mime_type="application/pdf",
+        file_size=poisoned_file.stat().st_size,
+        storage_bucket="local",
+        storage_key=str(Path(poisoned_file).resolve()),
+        checksum_sha256=None,
+        is_private=True,
+    )
+    db_session.add(document)
+    db_session.commit()
+
+    download_resp = client.get(
+        f"/api/v1/uploads/documents/{document.id}/download",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert download_resp.status_code == 404
+
+
+def test_s3_download_sanitizes_content_disposition_filename():
+    service = StorageService()
+
+    class FakeS3Client:
+        def get_object(self, Bucket, Key):
+            return {"Body": BytesIO(b"safe-content")}
+
+    service._s3_client = lambda: FakeS3Client()
+
+    document = SimpleNamespace(
+        storage_bucket="secure-bucket",
+        storage_key="safe-key",
+        mime_type="application/pdf",
+        original_filename='evil"\r\nx-test: 1.pdf',
+    )
+
+    response = service.build_download_response(document=document)
+
+    assert response.headers["content-disposition"] == 'attachment; filename="evil_x-test: 1.pdf"'

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import UploadFile
 
@@ -23,6 +24,8 @@ EXTENSION_MIME_MAP: dict[str, str] = {
 
 def normalize_upload_filename(filename: str) -> str:
     normalized = filename.replace("\\", "/").split("/")[-1].strip()
+    normalized = "".join(char for char in normalized if char >= " " and char != "\x7f")
+    normalized = normalized.replace('"', "_").replace(";", "_")
     if not normalized:
         raise ValueError("Filename is required")
     return normalized
@@ -65,3 +68,18 @@ def validate_file_signature(file: UploadFile, mime_type: str) -> None:
 def generate_stored_filename(original_filename: str) -> str:
     ext = Path(original_filename).suffix.lower() or ".bin"
     return f"{uuid.uuid4().hex}{ext}"
+
+
+def build_content_disposition_header(filename: str) -> str:
+    normalized = normalize_upload_filename(filename)
+    ascii_fallback = normalized.encode("ascii", "ignore").decode("ascii") or "download"
+    ascii_fallback = ascii_fallback.replace('"', "_").replace("\\", "_")
+
+    if normalized == ascii_fallback:
+        return f'attachment; filename="{ascii_fallback}"'
+
+    quoted_filename = quote(normalized, safe="")
+    return (
+        f'attachment; filename="{ascii_fallback}"; '
+        f"filename*=UTF-8''{quoted_filename}"
+    )

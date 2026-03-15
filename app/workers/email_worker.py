@@ -1,5 +1,7 @@
 import logging
+import smtplib
 from dataclasses import dataclass
+from email.message import EmailMessage as SMTPMessage
 from typing import Any
 
 logger = logging.getLogger("app.worker.email")
@@ -16,12 +18,17 @@ class EmailMessage:
 class EmailWorker:
     def send(self, message: EmailMessage) -> None:
         logger.info(
-            "email_send | to=%s subject=%s template=%s context=%s",
+            "email_send_mock | to=%s subject=%s template=%s context=%s",
             message.to_email,
             message.subject,
             message.template_name,
             message.context,
         )
+
+    def _render_text_body(self, message: EmailMessage) -> str:
+        context_lines = [f"{key}: {value}" for key, value in sorted(message.context.items())]
+        context = "\n".join(context_lines) if context_lines else "(no context)"
+        return f"template={message.template_name}\n\n{context}"
 
     def send_welcome_email(self, *, to_email: str, full_name: str) -> None:
         self.send(
@@ -142,4 +149,50 @@ class EmailWorker:
                     "currency": currency,
                 },
             )
+        )
+
+
+class MockEmailWorker(EmailWorker):
+    pass
+
+
+class SMTPEmailWorker(EmailWorker):
+    def __init__(
+        self,
+        *,
+        host: str,
+        port: int,
+        username: str,
+        password: str,
+        from_email: str,
+        use_tls: bool,
+        timeout_seconds: int,
+    ) -> None:
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.from_email = from_email
+        self.use_tls = use_tls
+        self.timeout_seconds = timeout_seconds
+
+    def send(self, message: EmailMessage) -> None:
+        email = SMTPMessage()
+        email["Subject"] = message.subject
+        email["From"] = self.from_email
+        email["To"] = message.to_email
+        email.set_content(self._render_text_body(message))
+
+        with smtplib.SMTP(self.host, self.port, timeout=self.timeout_seconds) as smtp:
+            if self.use_tls:
+                smtp.starttls()
+            if self.username:
+                smtp.login(self.username, self.password)
+            smtp.send_message(email)
+
+        logger.info(
+            "email_send_real | backend=smtp to=%s subject=%s template=%s",
+            message.to_email,
+            message.subject,
+            message.template_name,
         )

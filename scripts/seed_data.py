@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import argparse
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -8,6 +11,12 @@ from app.models.enums import TourScheduleStatus, TourStatus, TravelerType
 from app.models.flight import Airline, Airport, Flight
 from app.models.hotel import Hotel, HotelRoom
 from app.models.tour import Tour, TourItinerary, TourPolicy, TourPriceRule, TourSchedule
+
+
+def parse_anchor_datetime(value: str | None) -> datetime:
+    if value:
+        return datetime.fromisoformat(value)
+    return datetime.now(timezone.utc)
 
 
 def seed_airlines(db: Session) -> dict[str, Airline]:
@@ -64,17 +73,21 @@ def seed_airports(db: Session) -> dict[str, Airport]:
     return result
 
 
-def seed_flights(db: Session, airlines: dict[str, Airline], airports: dict[str, Airport]) -> None:
-    now = datetime.now(timezone.utc)
-
+def seed_flights(
+    db: Session,
+    airlines: dict[str, Airline],
+    airports: dict[str, Airport],
+    *,
+    anchor_datetime: datetime,
+) -> None:
     data = [
         {
             "airline_code": "VN",
             "flight_number": "VN220",
             "departure_code": "SGN",
             "arrival_code": "HAN",
-            "departure_time": now + timedelta(days=1, hours=2),
-            "arrival_time": now + timedelta(days=1, hours=4),
+            "departure_time": anchor_datetime + timedelta(days=1, hours=2),
+            "arrival_time": anchor_datetime + timedelta(days=1, hours=4),
             "base_price": Decimal("1850000.00"),
             "available_seats": 50,
             "status": "scheduled",
@@ -84,8 +97,8 @@ def seed_flights(db: Session, airlines: dict[str, Airline], airports: dict[str, 
             "flight_number": "VJ123",
             "departure_code": "HAN",
             "arrival_code": "DAD",
-            "departure_time": now + timedelta(days=2, hours=1),
-            "arrival_time": now + timedelta(days=2, hours=2, minutes=30),
+            "departure_time": anchor_datetime + timedelta(days=2, hours=1),
+            "arrival_time": anchor_datetime + timedelta(days=2, hours=2, minutes=30),
             "base_price": Decimal("950000.00"),
             "available_seats": 60,
             "status": "scheduled",
@@ -301,9 +314,13 @@ def seed_tour_details(db: Session, tours: dict[str, Tour]) -> None:
     db.flush()
 
 
-def seed_tour_schedules(db: Session, tours: dict[str, Tour]) -> dict[str, TourSchedule]:
-    today = datetime.now(timezone.utc).date()
-
+def seed_tour_schedules(
+    db: Session,
+    tours: dict[str, Tour],
+    *,
+    anchor_datetime: datetime,
+) -> dict[str, TourSchedule]:
+    today = anchor_datetime.date()
     data = [
         {
             "key": "PQ-S1",
@@ -413,21 +430,46 @@ def seed_tour_price_rules(db: Session, schedules: dict[str, TourSchedule]) -> No
     db.flush()
 
 
+def seed_catalog(db: Session, *, anchor_datetime: datetime) -> dict[str, dict[str, object]]:
+    airlines = seed_airlines(db)
+    airports = seed_airports(db)
+    seed_flights(db, airlines, airports, anchor_datetime=anchor_datetime)
+
+    hotels = seed_hotels(db)
+    seed_hotel_rooms(db, hotels)
+
+    tours = seed_tours(db)
+    seed_tour_details(db, tours)
+    schedules = seed_tour_schedules(db, tours, anchor_datetime=anchor_datetime)
+    seed_tour_price_rules(db, schedules)
+
+    return {
+        "airlines": airlines,
+        "airports": airports,
+        "hotels": hotels,
+        "tours": tours,
+        "tour_schedules": schedules,
+    }
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Seed catalog data.")
+    parser.add_argument(
+        "--anchor-datetime",
+        help="Optional ISO-8601 datetime used to make generated dates deterministic.",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     db = SessionLocal()
     try:
         with db.begin():
-            airlines = seed_airlines(db)
-            airports = seed_airports(db)
-            seed_flights(db, airlines, airports)
-
-            hotels = seed_hotels(db)
-            seed_hotel_rooms(db, hotels)
-
-            tours = seed_tours(db)
-            seed_tour_details(db, tours)
-            schedules = seed_tour_schedules(db, tours)
-            seed_tour_price_rules(db, schedules)
+            seed_catalog(
+                db,
+                anchor_datetime=parse_anchor_datetime(args.anchor_datetime),
+            )
 
         print("Seed data completed successfully.")
     finally:
