@@ -357,3 +357,99 @@ def test_health_ready_returns_503_when_email_worker_is_not_ready(monkeypatch):
 
     assert response.status_code == 503
     assert response.json()["checks"]["email_worker"] is False
+
+
+def test_health_ready_denies_unallowlisted_observability_request(monkeypatch):
+    from app import main as main_module
+    from app.core.metrics import operational_metrics
+    from app.core.runtime_state import runtime_task_state
+
+    class HealthyDB:
+        def execute(self, _query):
+            return 1
+
+        def close(self):
+            pass
+
+    class HealthyRedis:
+        def ping(self):
+            return True
+
+    operational_metrics.reset()
+    runtime_task_state.reset()
+    monkeypatch.setattr(main_module, "start_runtime_maintenance_loop", lambda: (None, None))
+    monkeypatch.setattr(main_module, "run_startup_checks", lambda: None)
+    monkeypatch.setattr(main_module, "run_noncritical_maintenance", lambda: None)
+    monkeypatch.setattr(main_module, "SessionLocal", lambda: HealthyDB())
+    monkeypatch.setattr(main_module, "redis_client", HealthyRedis())
+    monkeypatch.setattr(main_module, "is_storage_connection_ready", lambda: True)
+    monkeypatch.setattr(main_module, "is_email_worker_connection_ready", lambda: True)
+    monkeypatch.setattr(main_module, "is_notification_backend_connection_ready", lambda: True)
+    monkeypatch.setattr(main_module, "is_malware_scan_connection_ready", lambda: True)
+    monkeypatch.setattr(main_module.settings, "OBSERVABILITY_PROTECTION_MODE", "allowlist")
+    monkeypatch.setattr(main_module.settings, "OBSERVABILITY_ALLOWLIST", "203.0.113.10/32")
+
+    class FakeOutboxService:
+        def __init__(self, db):
+            self.db = db
+
+        def get_backlog_count(self):
+            return 1
+
+    monkeypatch.setattr(main_module, "OutboxService", FakeOutboxService)
+
+    with TestClient(main_module.app, client=("198.51.100.20", 50000)) as client:
+        response = client.get("/health/ready")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Access denied"
+
+
+def test_prometheus_metrics_allow_proxy_forwarded_ip_in_observability_allowlist(monkeypatch):
+    from app import main as main_module
+    from app.core.metrics import operational_metrics
+    from app.core.runtime_state import runtime_task_state
+
+    class FakeDB:
+        def execute(self, _query):
+            return 1
+
+        def close(self):
+            pass
+
+    class HealthyRedis:
+        def ping(self):
+            return True
+
+    operational_metrics.reset()
+    runtime_task_state.reset()
+    operational_metrics.record_request(status_code=200)
+    monkeypatch.setattr(main_module, "start_runtime_maintenance_loop", lambda: (None, None))
+    monkeypatch.setattr(main_module, "run_startup_checks", lambda: None)
+    monkeypatch.setattr(main_module, "run_noncritical_maintenance", lambda: None)
+    monkeypatch.setattr(main_module, "SessionLocal", lambda: FakeDB())
+    monkeypatch.setattr(main_module, "redis_client", HealthyRedis())
+    monkeypatch.setattr(main_module, "is_storage_connection_ready", lambda: True)
+    monkeypatch.setattr(main_module, "is_email_worker_connection_ready", lambda: True)
+    monkeypatch.setattr(main_module, "is_notification_backend_connection_ready", lambda: True)
+    monkeypatch.setattr(main_module, "is_malware_scan_connection_ready", lambda: True)
+    monkeypatch.setattr(main_module.settings, "OBSERVABILITY_PROTECTION_MODE", "allowlist")
+    monkeypatch.setattr(main_module.settings, "OBSERVABILITY_ALLOWLIST", "203.0.113.10/32")
+
+    class FakeOutboxService:
+        def __init__(self, db):
+            self.db = db
+
+        def get_backlog_count(self):
+            return 2
+
+    monkeypatch.setattr(main_module, "OutboxService", FakeOutboxService)
+
+    with TestClient(main_module.app, client=("127.0.0.1", 50000)) as client:
+        response = client.get(
+            "/metrics/prometheus",
+            headers={"x-forwarded-for": "203.0.113.10"},
+        )
+
+    assert response.status_code == 200
+    assert "secure_travel_app_info" in response.text

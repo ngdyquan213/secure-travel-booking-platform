@@ -43,6 +43,7 @@ def payment_to_dict(payment) -> dict:
         "currency": payment.currency,
         "gateway_order_ref": payment.gateway_order_ref,
         "gateway_transaction_ref": payment.gateway_transaction_ref,
+        "gateway_payload": getattr(payment, "gateway_payload", None),
         "paid_at": payment.paid_at,
         "created_at": payment.created_at,
     }

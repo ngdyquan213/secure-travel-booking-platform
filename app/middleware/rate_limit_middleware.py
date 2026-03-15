@@ -18,8 +18,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         "/api/v1/auth/login",
         "/api/v1/auth/register",
         "/api/v1/auth/refresh",
-        "/api/v1/payments/callback",
     }
+
+    @staticmethod
+    def _is_payment_callback_path(path: str) -> bool:
+        return path.startswith("/api/v1/payments/callback")
 
     def __init__(self, app, max_requests: int | None = None, window_seconds: int = 60):
         super().__init__(app)
@@ -37,7 +40,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return settings.RATE_LIMIT_REFRESH_PER_MINUTE
         if path.startswith("/api/v1/uploads"):
             return settings.RATE_LIMIT_UPLOAD_PER_MINUTE
-        if path == "/api/v1/payments/callback":
+        if self._is_payment_callback_path(path):
             return settings.RATE_LIMIT_PAYMENT_CALLBACK_PER_MINUTE
         return settings.RATE_LIMIT_DEFAULT_PER_MINUTE
 
@@ -49,7 +52,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return f"rl:{method}:{path}:{client_ip}"
 
     def _should_fail_closed(self, path: str) -> bool:
-        return path in self.FAIL_CLOSED_PATHS or path.startswith("/api/v1/uploads")
+        return (
+            path in self.FAIL_CLOSED_PATHS
+            or path.startswith("/api/v1/uploads")
+            or self._is_payment_callback_path(path)
+        )
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         if not settings.RATE_LIMIT_ENABLED:

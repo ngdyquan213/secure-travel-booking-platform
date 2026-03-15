@@ -20,6 +20,7 @@ class PaymentResponse(BaseModel):
     currency: str
     gateway_order_ref: str | None = None
     gateway_transaction_ref: str | None = None
+    gateway_payload: dict | None = None
     paid_at: datetime | None = None
 
 

@@ -33,12 +33,12 @@ services:
     container_name: secure_travel_mailhog_staging
     restart: unless-stopped
 
-  app:
+  migrate:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile
-    container_name: secure_travel_app_staging
-    restart: unless-stopped
+    container_name: secure_travel_migrate_staging
+    restart: "no"
     env_file:
       - ${APP_ENV_FILE:-../../.env.staging}
     environment:
@@ -53,9 +53,28 @@ services:
         condition: service_healthy
       mailhog:
         condition: service_started
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=\"$$FORWARDED_ALLOW_IPS\""
+    command: ["alembic", "upgrade", "head"]
+
+  app:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    container_name: secure_travel_app_staging
+    restart: unless-stopped
+    env_file:
+      - ${APP_ENV_FILE:-../../.env.staging}
+    environment:
+      ENVIRONMENT: staging
+      DEBUG: "false"
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      ALLOW_PAYMENT_SIMULATION: "false"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command:
+      - sh
+      - -c
+      - uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips="$$FORWARDED_ALLOW_IPS"
     expose:
       - "8000"
     volumes:

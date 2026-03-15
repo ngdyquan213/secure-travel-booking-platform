@@ -7,7 +7,7 @@ from fastapi import UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from starlette.datastructures import Headers
 
-from app.core.exceptions import ValidationAppException
+from app.core.exceptions import ExternalServiceAppException, ValidationAppException
 from app.services.storage_service import StorageService
 
 
@@ -116,6 +116,34 @@ def test_build_download_response_streams_s3_object(monkeypatch):
     assert isinstance(response, StreamingResponse)
     assert response.headers["content-disposition"].startswith("attachment;")
     assert asyncio.run(collect_body()) == b"helloworld"
+
+
+def test_build_download_response_maps_s3_errors(monkeypatch):
+    from app.core import config as config_module
+
+    monkeypatch.setattr(config_module.settings, "STORAGE_BACKEND", "s3")
+    monkeypatch.setattr(config_module.settings, "S3_BUCKET_NAME", "bucket-1")
+
+    service = StorageService()
+
+    class FakeClient:
+        def get_object(self, *, Bucket, Key):
+            raise RuntimeError("temporary storage failure")
+
+    monkeypatch.setattr(service, "_s3_client", lambda: FakeClient())
+
+    document = SimpleNamespace(
+        storage_bucket="bucket-1",
+        storage_key="doc-key",
+        mime_type="application/pdf",
+        original_filename="passport.pdf",
+    )
+
+    with pytest.raises(
+        ExternalServiceAppException,
+        match="Document storage is temporarily unavailable",
+    ):
+        service.build_download_response(document=document)
 
 
 def test_build_download_response_returns_local_file_response(monkeypatch, tmp_path):

@@ -8,7 +8,11 @@ htmlcov/
 uploads/
 alembic/versions/__pycache__/
 .venv
+bandit.out
+pip_audit.out
+pytest_*.out
 .env.*
 !.env.staging.example
 !.env.example
 !.env.test.example
+!.env.production.example

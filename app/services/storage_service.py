@@ -10,7 +10,11 @@ from fastapi import UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
 from app.core.config import settings
-from app.core.exceptions import NotFoundAppException, ValidationAppException
+from app.core.exceptions import (
+    ExternalServiceAppException,
+    NotFoundAppException,
+    ValidationAppException,
+)
 from app.utils.file_utils import build_content_disposition_header, generate_stored_filename
 
 CHUNK_SIZE = 1024 * 1024
@@ -54,7 +58,13 @@ class StorageService:
         if storage_bucket == settings.LOCAL_STORAGE_BUCKET:
             self.resolve_local_path(storage_key).unlink(missing_ok=True)
             return
-        self._s3_client().delete_object(Bucket=storage_bucket, Key=storage_key)
+        try:
+            self._s3_client().delete_object(Bucket=storage_bucket, Key=storage_key)
+        except Exception as exc:
+            raise self._translate_s3_exception(
+                exc,
+                default_message="Document storage is temporarily unavailable",
+            ) from exc
 
     def build_download_response(self, *, document) -> FileResponse | StreamingResponse:
         if document.storage_bucket == settings.LOCAL_STORAGE_BUCKET:
@@ -67,10 +77,16 @@ class StorageService:
                 filename=document.original_filename,
             )
 
-        body = self._s3_client().get_object(
-            Bucket=document.storage_bucket,
-            Key=document.storage_key,
-        )["Body"]
+        try:
+            body = self._s3_client().get_object(
+                Bucket=document.storage_bucket,
+                Key=document.storage_key,
+            )["Body"]
+        except Exception as exc:
+            raise self._translate_s3_exception(
+                exc,
+                default_message="Document storage is temporarily unavailable",
+            ) from exc
         headers = {
             "Content-Disposition": build_content_disposition_header(document.original_filename)
         }
@@ -233,8 +249,28 @@ class StorageService:
         return session.client("s3", endpoint_url=settings.S3_ENDPOINT_URL or None)
 
     def _iter_stream(self, body: BinaryIO) -> Iterator[bytes]:
-        while True:
-            chunk = body.read(CHUNK_SIZE)
-            if not chunk:
-                break
-            yield chunk
+        try:
+            while True:
+                chunk = body.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            close = getattr(body, "close", None)
+            if callable(close):
+                close()
+
+    @staticmethod
+    def _translate_s3_exception(
+        exc: Exception,
+        *,
+        default_message: str,
+    ) -> NotFoundAppException | ExternalServiceAppException:
+        error_code = None
+        response = getattr(exc, "response", None)
+        if isinstance(response, dict):
+            error_code = response.get("Error", {}).get("Code")
+
+        if str(error_code) in {"404", "NoSuchKey", "NotFound"}:
+            return NotFoundAppException("Document file not found")
+        return ExternalServiceAppException(default_message)

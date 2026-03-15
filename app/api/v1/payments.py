@@ -77,6 +77,34 @@ def payment_callback(
     )
 
 
+@router.post("/callback/stripe", response_model=PaymentCallbackResponse)
+async def stripe_payment_callback(
+    request: Request,
+    stripe_signature: str = Header(..., alias="Stripe-Signature"),
+    db: Session = Depends(get_db),
+) -> PaymentCallbackResponse:
+    service = build_payment_callback_service(db)
+    raw_body = await request.body()
+
+    try:
+        payment, _booking = service.process_stripe_webhook(
+            raw_body=raw_body,
+            signature_header=stripe_signature,
+            ip_address=get_client_ip(request),
+            user_agent=get_user_agent(request),
+        )
+    except AppException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+    return PaymentCallbackResponse(
+        success=True,
+        message="Payment callback processed",
+        **payment_to_dict(payment),
+    )
+
+
 @router.post("/{payment_id}/simulate-success", response_model=PaymentResponse)
 def simulate_payment_success(
     payment_id: str,

@@ -21,6 +21,7 @@ This project is positioned as a backend security lab: it implements core booking
 - JWT authentication, RBAC, ownership checks, refresh-token rotation
 - Server-side booking amount calculation and transactional inventory updates
 - Payment idempotency, callback signature verification, replay detection, amount/currency validation
+- Live-ready Stripe payment initiation and webhook verification path alongside legacy mock callbacks
 - Callback source allowlist based on IP/CIDR ranges
 - Upload extension, MIME, and file-signature validation
 - Optional malware scan hook for uploads with `mock` and `clamav` backends
@@ -44,19 +45,21 @@ This project is positioned as a backend security lab: it implements core booking
 
 ### Mocked
 
-- Payment gateway integration is simulated; callback signing uses an internal shared secret instead of a live provider SDK
+- Legacy gateway flows (`vnpay`, `momo`) remain simulated and continue using the internal shared-secret callback model
 - Email and notification workers support mock backends for development/testing
 - Malware scanning can run in `mock` mode for local verification without a real antivirus daemon
 
 ### Planned
 
-- Secret manager integration for staging/production instead of environment-file based secret distribution
 - WAF / reverse-proxy hardening and additional edge protections
 - Production object storage patterns such as presigned URLs and lifecycle policies
 
 ## Observability Notes
 
 - `GET /health`, `GET /health/live`, and `GET /health/ready` expose service health.
+- `GET /health/ready`, `GET /metrics`, and `GET /metrics/prometheus` can be restricted with:
+  - `OBSERVABILITY_PROTECTION_MODE`
+  - `OBSERVABILITY_ALLOWLIST`
 - `GET /health/ready` now includes readiness policy, outbox health, degraded checks, runtime-task state, and dependency signals for storage, email, notifications, malware scan, and rate limiting.
 - `GET /metrics` returns a JSON snapshot of the in-process counters plus the current outbox backlog.
 - `GET /metrics/prometheus` exposes Prometheus text format metrics including dependency readiness and runtime-task health.
@@ -66,6 +69,9 @@ This project is positioned as a backend security lab: it implements core booking
 ## Security Notes
 
 - `PAYMENT_CALLBACK_SOURCE_ALLOWLIST` accepts a comma-separated set of IPs/CIDRs and is required in staging/production.
+- `TRUSTED_HOSTS` must be explicitly configured and cannot fall back to a wildcard.
+- Bundled Nginx now overwrites inbound `X-Forwarded-For` and clears `Forwarded` before proxying so observability allowlists, rate limiting, and audit logs are not influenced by client-supplied proxy headers.
+- `OBSERVABILITY_PROTECTION_MODE=allowlist` is required in staging/production, and `OBSERVABILITY_ALLOWLIST` should contain only the monitoring/private networks that may reach readiness and metrics endpoints.
 - Upload malware scanning is optional and controlled through:
   - `UPLOAD_MALWARE_SCAN_ENABLED`
   - `UPLOAD_MALWARE_SCAN_BACKEND`
@@ -75,7 +81,24 @@ This project is positioned as a backend security lab: it implements core booking
 - Secret sourcing is described through:
   - `SECRET_SOURCE`
   - `SECRET_MANAGER_PROVIDER`
+  - `SECRET_MANAGER_SECRET_ID`
+  - `SECRET_MANAGER_AWS_REGION`
+- Stripe integration is controlled through:
+  - `STRIPE_SECRET_KEY`
+  - `STRIPE_PUBLISHABLE_KEY`
+  - `STRIPE_WEBHOOK_SECRET`
+  - `STRIPE_API_BASE_URL`
+  - `STRIPE_REQUEST_TIMEOUT_SECONDS`
+  - `STRIPE_WEBHOOK_TOLERANCE_SECONDS`
+- Both `/api/v1/payments/callback` and `/api/v1/payments/callback/stripe` use the sensitive payment-callback rate-limit policy and fail closed if the shared Redis limiter is unavailable.
 - `OUTBOX_HEALTH_MODE` controls whether outbox health is `best_effort` or `required` for readiness.
+
+## Environment Profiles
+
+- `development`: local developer workflow using `.env` copied from `.env.example`, with reload/debug-friendly defaults.
+- `test`: automated and local test profile using `.env.test.example` plus `infra/docker/docker-compose.test.yml` for PostgreSQL-backed test runs.
+- `staging`: shared pre-production validation profile using `.env.staging.example` and `infra/docker/docker-compose.staging.yml`.
+- `production`: hardened runtime profile using `.env.production.example` and `infra/docker/docker-compose.production.yml`, expecting external managed dependencies.
 
 ## Local Setup
 
@@ -101,6 +124,15 @@ uvicorn app.main:app --reload --proxy-headers --forwarded-allow-ips="127.0.0.1,:
 - `tests/test_migration_regressions.py` verifies the upgrade path from the pre-outbox schema revision to `head`, including the coupon-column repair migration.
 - CI installs Python dependencies from `requirements-dev.lock` and then runs `pip check` so dependency resolution matches local lockfile-based setup more closely.
 
+## Deployment Profiles
+
+- `make up` / `make smoke-local` boot the development stack.
+- `make up-staging` / `make smoke-staging` boot the staging stack with Prometheus and Mailhog.
+- `make up-production` / `make smoke-production` boot the production app stack against externally provided Postgres, Redis, SMTP, and storage services.
+- `make release-preflight` validates production env material before rollout.
+- `make release-verify-demo` verifies the seeded QA journey after deployment and can be scaled with script flags for light concurrent load.
+- The production compose profile separates `migrate` from `app` startup and supports TLS termination in Nginx when `NGINX_TLS_ENABLED=true`.
+
 ## Demo Seed
 
 - `make seed-demo` creates a deterministic handoff dataset anchored at `2026-04-01T08:00:00+00:00`.
@@ -108,13 +140,16 @@ uvicorn app.main:app --reload --proxy-headers --forwarded-allow-ips="127.0.0.1,:
   - admin user `admin@example.com` / `Admin12345`
   - QA customer `qa.customer@example.com` / `Traveler12345`
   - fixed catalog data, coupons, and booking `BK-DEMO-FLIGHT-001`
+- `python -m scripts.seed_demo_environment` seeds the full deterministic demo profile.
 - `python scripts/seed_data.py --anchor-datetime ...` and `python scripts/seed_coupons.py --anchor-datetime ...` remain available if you only need deterministic catalog or coupon dates.
 
 ## Additional Docs
 
 - `docs/api-examples.md` contains curl-based walkthroughs for the main API flows.
+- `docs/release-checklist.md` is the go/no-go checklist for production release windows.
+- `docs/backup-restore-runbook.md` documents backup expectations and restore drills.
 - `docs/migration-runbook.md` documents migration rollout and rollback expectations.
-- `docs/deployment.md` documents staging bring-up, smoke verification, Prometheus access, and demo seeding.
+- `docs/deployment.md` documents development, test, staging, and production bring-up patterns, smoke verification, Prometheus access, and demo seeding.
 - `CONTRIBUTING.md` explains the local quality gates expected before changes are merged.
 
 ## Repository Layout

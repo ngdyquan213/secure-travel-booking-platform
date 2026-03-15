@@ -101,6 +101,19 @@ def test_settings_reject_invalid_redis_url():
         )
 
 
+def test_settings_reject_empty_trusted_hosts():
+    with pytest.raises(ValueError, match="TRUSTED_HOSTS must not be empty"):
+        Settings(
+            SECRET_KEY="this-is-a-very-strong-secret-key-123456",
+            PAYMENT_CALLBACK_SECRET="very-strong-payment-secret",
+            DATABASE_URL="sqlite:///./test.db",
+            REDIS_URL="redis://localhost:6379/0",
+            TRUSTED_HOSTS=" , ",
+            OUTBOX_LEASE_SECONDS=30,
+            RUNTIME_MAINTENANCE_INTERVAL_SECONDS=60,
+        )
+
+
 def test_settings_reject_production_with_debug_true():
     with pytest.raises(ValueError, match="DEBUG must be false in staging/production"):
         Settings(
@@ -186,10 +199,98 @@ def test_settings_accept_valid_staging_config():
         ALLOW_PAYMENT_SIMULATION=False,
         CORS_ORIGINS="https://staging.example.com",
         TRUSTED_HOSTS="staging.example.com",
+        OBSERVABILITY_PROTECTION_MODE="allowlist",
+        OBSERVABILITY_ALLOWLIST="10.10.0.0/16,203.0.113.0/24",
     )
 
     assert settings.ENVIRONMENT == "staging"
     assert settings.DEBUG is False
+
+
+def test_settings_accept_valid_production_config():
+    settings = Settings(
+        ENVIRONMENT="production",
+        DEBUG=False,
+        SECRET_KEY="production-secret-key-12345678901234567890",
+        PAYMENT_CALLBACK_SECRET="production-payment-secret-123456",
+        DATABASE_URL=(
+            "postgresql+psycopg2://prod-user:prod-db-password"
+            "@postgres-primary.internal:5432/secure_travel_booking"
+        ),
+        REDIS_URL="redis://redis-primary.internal:6379/0",
+        OUTBOX_LEASE_SECONDS=30,
+        RUNTIME_MAINTENANCE_INTERVAL_SECONDS=60,
+        EMAIL_WORKER_BACKEND="smtp",
+        SMTP_HOST="smtp.internal",
+        SMTP_FROM_EMAIL="no-reply@example.com",
+        NOTIFICATION_WORKER_BACKEND="redis",
+        NOTIFICATION_REDIS_CHANNEL="secure_travel.notifications.production",
+        FORWARDED_ALLOW_IPS="10.20.0.0/16,10.21.0.0/16",
+        PAYMENT_CALLBACK_SOURCE_ALLOWLIST="10.30.0.0/16,203.0.113.10/32",
+        ALLOW_PAYMENT_SIMULATION=False,
+        CORS_ORIGINS="https://app.example.com",
+        TRUSTED_HOSTS="api.example.com,app,app:8000",
+        OBSERVABILITY_PROTECTION_MODE="allowlist",
+        OBSERVABILITY_ALLOWLIST="10.40.0.0/16,10.41.0.0/16",
+        STORAGE_BACKEND="s3",
+        S3_BUCKET_NAME="secure-travel-booking-prod",
+        S3_REGION="ap-southeast-1",
+        S3_ACCESS_KEY_ID="prod-access-key",
+        S3_SECRET_ACCESS_KEY="prod-secret-access-key",
+        SECRET_SOURCE="secret_manager",
+        SECRET_MANAGER_PROVIDER="aws-secrets-manager",
+        SECRET_MANAGER_SECRET_ID="secure-travel/prod",
+    )
+
+    assert settings.ENVIRONMENT == "production"
+    assert settings.DEBUG is False
+
+
+def test_settings_reject_staging_without_observability_allowlist_mode():
+    with pytest.raises(
+        ValueError,
+        match="OBSERVABILITY_PROTECTION_MODE must be 'allowlist' in staging/production",
+    ):
+        Settings(
+            ENVIRONMENT="staging",
+            DEBUG=False,
+            SECRET_KEY="staging-secret-key-12345678901234567890",
+            PAYMENT_CALLBACK_SECRET="staging-payment-secret-123456",
+            DATABASE_URL="postgresql+psycopg2://db-user:db-pass@postgres:5432/secure_travel_booking",
+            REDIS_URL="redis://redis:6379/0",
+            OUTBOX_LEASE_SECONDS=30,
+            EMAIL_WORKER_BACKEND="smtp",
+            SMTP_HOST="smtp.internal",
+            SMTP_FROM_EMAIL="no-reply@example.com",
+            NOTIFICATION_WORKER_BACKEND="redis",
+            FORWARDED_ALLOW_IPS="127.0.0.1,172.16.0.0/12",
+            PAYMENT_CALLBACK_SOURCE_ALLOWLIST="10.10.0.0/16,203.0.113.10/32",
+            RUNTIME_MAINTENANCE_INTERVAL_SECONDS=60,
+            ALLOW_PAYMENT_SIMULATION=False,
+            CORS_ORIGINS="https://staging.example.com",
+            TRUSTED_HOSTS="staging.example.com",
+            OBSERVABILITY_ALLOWLIST="10.10.0.0/16",
+        )
+
+
+def test_settings_reject_allowlist_mode_without_observability_allowlist():
+    with pytest.raises(
+        ValueError,
+        match=(
+            "OBSERVABILITY_ALLOWLIST must not be empty when "
+            "OBSERVABILITY_PROTECTION_MODE=allowlist"
+        ),
+    ):
+        Settings(
+            SECRET_KEY="this-is-a-very-strong-secret-key-123456",
+            PAYMENT_CALLBACK_SECRET="very-strong-payment-secret",
+            DATABASE_URL="sqlite:///./test.db",
+            REDIS_URL="redis://localhost:6379/0",
+            TRUSTED_HOSTS="localhost",
+            OBSERVABILITY_PROTECTION_MODE="allowlist",
+            OUTBOX_LEASE_SECONDS=30,
+            RUNTIME_MAINTENANCE_INTERVAL_SECONDS=60,
+        )
 
 
 def test_settings_reject_staging_localhost_redis():
@@ -352,4 +453,37 @@ def test_settings_require_secret_manager_provider_when_enabled():
             OUTBOX_LEASE_SECONDS=30,
             RUNTIME_MAINTENANCE_INTERVAL_SECONDS=60,
             SECRET_SOURCE="secret_manager",
+        )
+
+
+def test_settings_require_secret_manager_secret_id_when_enabled():
+    with pytest.raises(
+        ValueError,
+        match="SECRET_MANAGER_SECRET_ID is required when SECRET_SOURCE=secret_manager",
+    ):
+        Settings(
+            SECRET_KEY="this-is-a-very-strong-secret-key-123456",
+            PAYMENT_CALLBACK_SECRET="very-strong-payment-secret",
+            DATABASE_URL="sqlite:///./test.db",
+            REDIS_URL="redis://localhost:6379/0",
+            OUTBOX_LEASE_SECONDS=30,
+            RUNTIME_MAINTENANCE_INTERVAL_SECONDS=60,
+            SECRET_SOURCE="secret_manager",
+            SECRET_MANAGER_PROVIDER="aws-secrets-manager",
+        )
+
+
+def test_settings_require_stripe_webhook_secret_when_stripe_secret_key_is_set():
+    with pytest.raises(
+        ValueError,
+        match="STRIPE_WEBHOOK_SECRET is required when STRIPE_SECRET_KEY is configured",
+    ):
+        Settings(
+            SECRET_KEY="this-is-a-very-strong-secret-key-123456",
+            PAYMENT_CALLBACK_SECRET="very-strong-payment-secret",
+            DATABASE_URL="sqlite:///./test.db",
+            REDIS_URL="redis://localhost:6379/0",
+            OUTBOX_LEASE_SECONDS=30,
+            RUNTIME_MAINTENANCE_INTERVAL_SECONDS=60,
+            STRIPE_SECRET_KEY="sk_test_demo",
         )

@@ -79,6 +79,24 @@ def test_rate_limit_fails_closed_for_sensitive_path_when_redis_is_unavailable(mo
     assert operational_metrics.snapshot()["rate_limit_backend_failures_total"] == 1
 
 
+def test_rate_limit_fails_closed_for_stripe_callback_when_redis_is_unavailable(monkeypatch):
+    app = create_test_app(max_requests=1, window_seconds=60)
+    operational_metrics.reset()
+
+    @app.post("/api/v1/payments/callback/stripe")
+    def stripe_callback():
+        return {"status": "ok"}
+
+    monkeypatch.setattr(redis_client, "incr", raise_redis_down)
+
+    with TestClient(app) as client:
+        resp = client.post("/api/v1/payments/callback/stripe")
+
+    assert resp.status_code == 503
+    assert resp.json()["error_code"] == "RATE_LIMIT_UNAVAILABLE"
+    assert operational_metrics.snapshot()["rate_limit_backend_failures_total"] == 1
+
+
 def test_rate_limit_fails_open_for_non_sensitive_path_when_redis_is_unavailable(monkeypatch):
     app = create_test_app(max_requests=1, window_seconds=60)
     operational_metrics.reset()

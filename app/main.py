@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -38,6 +38,8 @@ from app.middleware.logging_middleware import LoggingMiddleware
 from app.middleware.rate_limit_middleware import RateLimitMiddleware
 from app.middleware.request_id_middleware import RequestIDMiddleware
 from app.services.outbox_service import OutboxService
+from app.utils.ip_utils import ip_in_allowlist
+from app.utils.request_context import get_client_ip
 
 configure_logging(debug=settings.DEBUG)
 
@@ -125,6 +127,17 @@ def _build_dependency_checks() -> dict[str, bool]:
     return checks
 
 
+def _enforce_observability_access(request: Request) -> None:
+    if settings.OBSERVABILITY_PROTECTION_MODE == "disabled":
+        return
+
+    client_ip = get_client_ip(request)
+    if client_ip and ip_in_allowlist(client_ip, settings.observability_allowlist_list):
+        return
+
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     run_startup_checks()
@@ -152,7 +165,7 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=settings.trusted_hosts_list or ["*"],
+    allowed_hosts=settings.trusted_hosts_list,
 )
 
 app.add_middleware(
@@ -183,7 +196,8 @@ def health_live():
 
 
 @app.get("/health/ready")
-def health_ready():
+def health_ready(request: Request):
+    _enforce_observability_access(request)
     dependency_checks = _build_dependency_checks()
     outbox_ok, outbox_health = _build_outbox_health_snapshot()
     outbox_required = outbox_health["required_for_readiness"]
@@ -232,7 +246,8 @@ def health_ready():
 
 
 @app.get("/metrics")
-def metrics():
+def metrics(request: Request):
+    _enforce_observability_access(request)
     backlog = operational_metrics.snapshot().get("outbox_backlog", 0)
 
     db = None
@@ -253,7 +268,8 @@ def metrics():
 
 
 @app.get("/metrics/prometheus")
-def metrics_prometheus():
+def metrics_prometheus(request: Request):
+    _enforce_observability_access(request)
     dependency_checks = _build_dependency_checks()
     outbox_ok, outbox_health = _build_outbox_health_snapshot()
     dependency_checks["outbox"] = outbox_ok

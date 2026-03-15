@@ -7,7 +7,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.exceptions import NotFoundAppException, ValidationAppException
+from app.core.exceptions import (
+    ExternalServiceAppException,
+    NotFoundAppException,
+    ValidationAppException,
+)
 from app.core.logging import build_log_extra
 from app.core.metrics import operational_metrics
 from app.core.security import verify_payment_callback_signature
@@ -19,6 +23,7 @@ from app.services.application_service import ApplicationService
 from app.services.audit_service import AuditService
 from app.services.outbox_service import OutboxService
 from app.services.payment_callback_domain_service import PaymentCallbackDomainService
+from app.services.payment_gateway_service import PaymentGatewayService
 from app.utils.ip_utils import ip_in_allowlist, normalize_ip
 from app.workers.email_worker import EmailWorker
 
@@ -36,6 +41,7 @@ class PaymentCallbackService(ApplicationService):
         email_worker: EmailWorker,
         domain_service: PaymentCallbackDomainService,
         outbox_service: OutboxService | None = None,
+        gateway_service: PaymentGatewayService | None = None,
     ) -> None:
         self.db = db
         self.booking_repo = booking_repo
@@ -47,6 +53,7 @@ class PaymentCallbackService(ApplicationService):
             db=db,
             email_worker=email_worker,
         )
+        self.gateway_service = gateway_service or PaymentGatewayService()
 
     def _reject_callback(
         self,
@@ -93,6 +100,7 @@ class PaymentCallbackService(ApplicationService):
         signature: str,
         ip_address: str | None = None,
         user_agent: str | None = None,
+        signature_verified: bool = False,
     ):
         normalized_ip = normalize_ip(ip_address)
         logger.info(
@@ -126,7 +134,7 @@ class PaymentCallbackService(ApplicationService):
                 },
             )
 
-        signature_ok = verify_payment_callback_signature(
+        signature_ok = signature_verified or verify_payment_callback_signature(
             gateway_name=gateway_name,
             gateway_order_ref=gateway_order_ref,
             gateway_transaction_ref=gateway_transaction_ref,
@@ -329,3 +337,54 @@ class PaymentCallbackService(ApplicationService):
 
         self.refresh_all(payment, booking)
         return payment, booking
+
+    def process_stripe_webhook(
+        self,
+        *,
+        raw_body: bytes,
+        signature_header: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ):
+        normalized_ip = normalize_ip(ip_address)
+
+        try:
+            callback_payload = self.gateway_service.parse_stripe_webhook(
+                raw_body=raw_body,
+                signature_header=signature_header,
+            )
+        except ExternalServiceAppException:
+            raise
+        except ValidationAppException as exc:
+            error_message = str(exc)
+            reason = {
+                "Invalid callback signature": "invalid_signature",
+                "Expired callback timestamp": "expired_timestamp",
+                "Unsupported payment callback event": "unsupported_event",
+            }.get(error_message, "invalid_payload")
+            self._reject_callback(
+                message=error_message,
+                reason=reason,
+                severity=(
+                    "high"
+                    if reason in {"invalid_signature", "expired_timestamp"}
+                    else "medium"
+                ),
+                title="Stripe payment callback rejected",
+                description=error_message,
+                ip_address=normalized_ip,
+                event_data={"gateway_name": "stripe"},
+            )
+
+        return self.process_callback(
+            gateway_name=callback_payload["gateway_name"],
+            gateway_order_ref=callback_payload["gateway_order_ref"],
+            gateway_transaction_ref=callback_payload["gateway_transaction_ref"],
+            amount=callback_payload["amount"],
+            currency=callback_payload["currency"],
+            status=callback_payload["status"],
+            signature="provider_verified",
+            ip_address=normalized_ip,
+            user_agent=user_agent,
+            signature_verified=True,
+        )

@@ -54,12 +54,9 @@ def download_document(
     db: Session = Depends(get_db),
 ):
     service = build_upload_service(db)
-
-    document = service.get_my_document(
+    return service.build_my_document_download_response(
         user_id=str(current_user.id),
         document_id=document_id,
         ip_address=get_client_ip(request),
         user_agent=get_user_agent(request),
     )
-
-    return service.storage_service.build_download_response(document=document)

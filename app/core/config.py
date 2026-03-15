@@ -6,6 +6,10 @@ from typing import Literal
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.secret_manager import load_secret_manager_environment
+
+load_secret_manager_environment()
+
 
 class Settings(BaseSettings):
     APP_NAME: str = "Secure Travel Booking Platform"
@@ -36,6 +40,8 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "http://localhost,http://127.0.0.1"
     TRUSTED_HOSTS: str = "localhost,127.0.0.1,testserver"
+    OBSERVABILITY_PROTECTION_MODE: Literal["disabled", "allowlist"] = "disabled"
+    OBSERVABILITY_ALLOWLIST: str = ""
 
     STORAGE_BACKEND: Literal["local", "s3"] = "local"
     LOCAL_UPLOAD_DIR: str = "uploads"
@@ -70,6 +76,14 @@ class Settings(BaseSettings):
     CLAMAV_TIMEOUT_SECONDS: int = 10
     SECRET_SOURCE: Literal["env", "secret_manager"] = "env"
     SECRET_MANAGER_PROVIDER: str = ""
+    SECRET_MANAGER_SECRET_ID: str = ""
+    SECRET_MANAGER_AWS_REGION: str = ""
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_PUBLISHABLE_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_API_BASE_URL: str = "https://api.stripe.com/v1"
+    STRIPE_REQUEST_TIMEOUT_SECONDS: int = 10
+    STRIPE_WEBHOOK_TOLERANCE_SECONDS: int = 300
 
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
@@ -137,6 +151,13 @@ class Settings(BaseSettings):
     def validate_redis_url(cls, value: str) -> str:
         if not value.startswith(("redis://", "rediss://")):
             raise ValueError("REDIS_URL must start with redis:// or rediss://")
+        return value
+
+    @field_validator("TRUSTED_HOSTS")
+    @classmethod
+    def validate_trusted_hosts(cls, value: str) -> str:
+        if not any(item.strip() for item in value.split(",")):
+            raise ValueError("TRUSTED_HOSTS must not be empty")
         return value
 
     @field_validator("ACCESS_TOKEN_EXPIRE_MINUTES")
@@ -261,6 +282,18 @@ class Settings(BaseSettings):
         for value in self.payment_callback_source_allowlist_list:
             ip_network(value, strict=False)
 
+        for value in self.observability_allowlist_list:
+            ip_network(value, strict=False)
+
+        if (
+            self.OBSERVABILITY_PROTECTION_MODE == "allowlist"
+            and not self.observability_allowlist_list
+        ):
+            raise ValueError(
+                "OBSERVABILITY_ALLOWLIST must not be empty when "
+                "OBSERVABILITY_PROTECTION_MODE=allowlist"
+            )
+
         if self.UPLOAD_MALWARE_SCAN_ENABLED and self.UPLOAD_MALWARE_SCAN_BACKEND == "clamav":
             if not self.CLAMAV_HOST.strip():
                 raise ValueError("CLAMAV_HOST is required when malware scan backend is clamav")
@@ -269,6 +302,22 @@ class Settings(BaseSettings):
             raise ValueError(
                 "SECRET_MANAGER_PROVIDER is required when SECRET_SOURCE=secret_manager"
             )
+
+        if self.SECRET_SOURCE == "secret_manager" and not self.SECRET_MANAGER_SECRET_ID.strip():  # nosec B105
+            raise ValueError(
+                "SECRET_MANAGER_SECRET_ID is required when SECRET_SOURCE=secret_manager"
+            )
+
+        if self.STRIPE_SECRET_KEY and not self.STRIPE_WEBHOOK_SECRET.strip():
+            raise ValueError(
+                "STRIPE_WEBHOOK_SECRET is required when STRIPE_SECRET_KEY is configured"
+            )
+
+        if self.STRIPE_REQUEST_TIMEOUT_SECONDS <= 0:
+            raise ValueError("STRIPE_REQUEST_TIMEOUT_SECONDS must be > 0")
+
+        if self.STRIPE_WEBHOOK_TOLERANCE_SECONDS <= 0:
+            raise ValueError("STRIPE_WEBHOOK_TOLERANCE_SECONDS must be > 0")
 
         if self.ENVIRONMENT in {"staging", "production"}:
             weak_secret_values = {
@@ -319,6 +368,12 @@ class Settings(BaseSettings):
                     "PAYMENT_CALLBACK_SOURCE_ALLOWLIST must not be empty in staging/production"
                 )
 
+            if self.OBSERVABILITY_PROTECTION_MODE != "allowlist":
+                raise ValueError(
+                    "OBSERVABILITY_PROTECTION_MODE must be 'allowlist' in "
+                    "staging/production"
+                )
+
         return self
 
     @property
@@ -356,6 +411,10 @@ class Settings(BaseSettings):
             for item in self.PAYMENT_CALLBACK_SOURCE_ALLOWLIST.split(",")
             if item.strip()
         ]
+
+    @property
+    def observability_allowlist_list(self) -> list[str]:
+        return [item.strip() for item in self.OBSERVABILITY_ALLOWLIST.split(",") if item.strip()]
 
 
 settings = Settings()

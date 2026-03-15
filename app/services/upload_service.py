@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -191,8 +192,6 @@ class UploadService(ApplicationService):
         *,
         user_id: str,
         document_id: str,
-        ip_address: str | None = None,
-        user_agent: str | None = None,
     ) -> UploadedDocument:
         document = self.document_repo.get_by_id_and_user_id(document_id, user_id)
         if not document:
@@ -203,6 +202,21 @@ class UploadService(ApplicationService):
             if not file_path.exists():
                 raise NotFoundAppException("Document file not found")
 
+        return document
+
+    def build_my_document_download_response(
+        self,
+        *,
+        user_id: str,
+        document_id: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> FileResponse | StreamingResponse:
+        document = self.get_my_document(
+            user_id=user_id,
+            document_id=document_id,
+        )
+        response = self.storage_service.build_download_response(document=document)
         normalized_ip = normalize_ip(ip_address)
 
         self.audit_service.log_action(
@@ -217,4 +231,4 @@ class UploadService(ApplicationService):
         )
         self.commit()
 
-        return document
+        return response

@@ -39,6 +39,15 @@ def _parse_x_forwarded_for(header_value: str) -> list[str]:
     return candidates
 
 
+def _resolve_forwarded_client_ip(candidates: list[str]) -> str | None:
+    # Walk the proxy chain from the app-facing side and stop at the first
+    # hop that is not one of our trusted proxies.
+    for candidate in reversed(candidates):
+        if not ip_in_allowlist(candidate, settings.forwarded_allow_ips_list):
+            return candidate
+    return None
+
+
 def _trusted_proxy_forwarded_ip(request: Request) -> str | None:
     peer_ip = normalize_ip(request.client.host) if request.client and request.client.host else None
     if not peer_ip:
@@ -51,13 +60,17 @@ def _trusted_proxy_forwarded_ip(request: Request) -> str | None:
     if forwarded:
         candidates = _parse_forwarded_header(forwarded)
         if candidates:
-            return candidates[0]
+            resolved = _resolve_forwarded_client_ip(candidates)
+            if resolved:
+                return resolved
 
     x_forwarded_for = request.headers.get("x-forwarded-for")
     if x_forwarded_for:
         candidates = _parse_x_forwarded_for(x_forwarded_for)
         if candidates:
-            return candidates[0]
+            resolved = _resolve_forwarded_client_ip(candidates)
+            if resolved:
+                return resolved
 
     x_real_ip = request.headers.get("x-real-ip")
     if x_real_ip:

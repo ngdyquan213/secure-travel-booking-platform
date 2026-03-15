@@ -1,4 +1,4 @@
-.PHONY: install dev migrate makemigrations seed seed-coupons seed-demo create-admin test test-cov lint security up down logs restart up-test-db down-test-db test-postgres runtime-check smoke-local up-staging down-staging logs-staging smoke-staging
+.PHONY: install dev migrate makemigrations seed seed-coupons seed-demo create-admin test test-cov lint security up down logs restart up-test-db down-test-db test-postgres runtime-check smoke-local up-staging down-staging logs-staging smoke-staging up-production down-production logs-production smoke-production release-preflight release-verify-demo
 
 install:
 	pip install --upgrade pip==25.2
@@ -21,7 +21,7 @@ seed-coupons:
 	python scripts/seed_coupons.py
 
 seed-demo:
-	python scripts/seed_demo_environment.py
+	python -m scripts.seed_demo_environment
 
 create-admin:
 	python scripts/create_admin.py
@@ -80,3 +80,21 @@ logs-staging:
 
 smoke-staging:
 	python scripts/smoke_local_stack.py --base-url $${SMOKE_BASE_URL:-http://localhost:$${HOST_HTTP_PORT:-8080}} --prometheus-url $${SMOKE_PROMETHEUS_URL:-http://localhost:$${HOST_PROMETHEUS_PORT:-9090}} --expected-environment staging
+
+up-production:
+	docker compose --env-file .env.production -f infra/docker/docker-compose.production.yml up -d --build
+
+down-production:
+	docker compose --env-file .env.production -f infra/docker/docker-compose.production.yml down
+
+logs-production:
+	docker compose --env-file .env.production -f infra/docker/docker-compose.production.yml logs -f
+
+smoke-production:
+	python scripts/smoke_local_stack.py --base-url $${SMOKE_BASE_URL:-http://localhost:$${HOST_HTTP_PORT:-8081}} --expected-environment production
+
+release-preflight:
+	python scripts/release_preflight.py --env-file $${APP_ENV_FILE:-.env.production} --check-local-files
+
+release-verify-demo:
+	python scripts/release_verify_demo.py --base-url $${RELEASE_BASE_URL:-http://localhost:8081/api/v1}

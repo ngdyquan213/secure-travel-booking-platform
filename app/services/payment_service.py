@@ -16,6 +16,7 @@ from app.repositories.booking_repository import BookingRepository
 from app.repositories.payment_repository import PaymentRepository
 from app.services.application_service import ApplicationService
 from app.services.audit_service import AuditService
+from app.services.payment_gateway_service import PaymentGatewayService
 from app.utils.enums import enum_to_str
 from app.utils.ip_utils import normalize_ip
 from app.workers.email_worker import EmailWorker
@@ -34,12 +35,14 @@ class PaymentService(ApplicationService):
         payment_repo: PaymentRepository,
         audit_service: AuditService,
         email_worker: EmailWorker,
+        gateway_service: PaymentGatewayService | None = None,
     ) -> None:
         self.db = db
         self.booking_repo = booking_repo
         self.payment_repo = payment_repo
         self.audit_service = audit_service
         self.email_worker = email_worker
+        self.gateway_service = gateway_service or PaymentGatewayService()
 
     @staticmethod
     def _assert_idempotent_request_matches_existing(
@@ -76,6 +79,8 @@ class PaymentService(ApplicationService):
         if not idempotency_key:
             raise ValidationAppException("Idempotency key is required")
 
+        self.gateway_service.assert_gateway_is_configured(payment_method=payment_method)
+
         existing = self.payment_repo.get_by_booking_and_idempotency_key(
             booking_id=booking_id,
             idempotency_key=idempotency_key,
@@ -101,6 +106,9 @@ class PaymentService(ApplicationService):
                     gateway_order_ref=existing.gateway_order_ref,
                 ),
             )
+            gateway_payload = self.gateway_service.build_existing_gateway_payload(payment=existing)
+            if gateway_payload is not None:
+                existing.gateway_payload = gateway_payload
             return existing
 
         booking_payment_status = enum_to_str(booking.payment_status)
@@ -112,6 +120,7 @@ class PaymentService(ApplicationService):
             raise ValidationAppException("Idempotency key is too long")
 
         normalized_ip = normalize_ip(ip_address)
+        gateway_result = None
 
         try:
             payment = Payment(
@@ -127,6 +136,9 @@ class PaymentService(ApplicationService):
                 paid_at=None,
             )
             self.payment_repo.add_payment(payment)
+            gateway_result = self.gateway_service.create_payment_session(payment=payment)
+            if gateway_result is not None:
+                payment.gateway_transaction_ref = gateway_result.external_reference
 
             self.audit_service.log_action(
                 actor_type=LogActorType.user,
@@ -182,6 +194,9 @@ class PaymentService(ApplicationService):
                 amount=amount,
                 currency=booking.currency,
             )
+            gateway_payload = self.gateway_service.build_existing_gateway_payload(payment=payment)
+            if gateway_payload is not None:
+                payment.gateway_payload = gateway_payload
             logger.warning(
                 "payment_initiation_race_reused_existing",
                 extra=build_log_extra(
@@ -196,6 +211,8 @@ class PaymentService(ApplicationService):
             raise
 
         self.db.refresh(payment)
+        if gateway_result is not None:
+            payment.gateway_payload = gateway_result.gateway_payload
         return payment
 
     def simulate_success(
