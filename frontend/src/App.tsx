@@ -2,9 +2,19 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useAuthStore } from './stores/authStore'
 
-// Pages
+// Public Pages
+import { HomePage } from './pages/HomePage'
+import { BlogListPage } from './pages/BlogListPage'
+import { BlogDetailPage } from './pages/BlogDetailPage'
+import { AboutPage } from './pages/AboutPage'
+import { ServicesPage } from './pages/ServicesPage'
+import { ContactPage } from './pages/ContactPage'
+
+// Auth Pages
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
+
+// Protected Pages
 import DashboardPage from './pages/DashboardPage'
 import FlightsPage from './pages/FlightsPage'
 import HotelsPage from './pages/HotelsPage'
@@ -43,7 +53,15 @@ function App() {
         <Header />
         <main className="flex-1">
           <Routes>
-            {/* Public Routes */}
+            {/* Public Routes - Home & Information */}
+            <Route path="/" element={<HomePage />} />
+            <Route path="/blog" element={<BlogListPage />} />
+            <Route path="/blog/:id" element={<BlogDetailPage />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/services" element={<ServicesPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+
+            {/* Public Auth Routes */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
 
@@ -59,8 +77,7 @@ function App() {
               <Route path="/admin" element={<AdminDashboard />} />
             </Route>
 
-            {/* Redirects and Fallbacks */}
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            {/* Fallback */}
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </main>

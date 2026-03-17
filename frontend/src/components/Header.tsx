@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { useState } from 'react'
-import { Menu, X, LogOut, User, Home, Plane, Hotel, MapPin, Upload, Settings } from 'lucide-react'
+import { Menu, X, LogOut, Home, Plane, Hotel, MapPin, Upload, Settings, BookOpen, Users } from 'lucide-react'
 import { getInitials } from '../utils/helpers'
 
 export default function Header() {
@@ -28,7 +28,7 @@ export default function Header() {
             <span className="font-bold text-lg text-gray-900 hidden sm:inline">TravelBook</span>
           </Link>
 
-          {/* Desktop Navigation */}
+          {/* Desktop Navigation - Authenticated */}
           {isAuthenticated && (
             <nav className="hidden md:flex items-center gap-8">
               <Link
@@ -60,6 +60,13 @@ export default function Header() {
                 Tours
               </Link>
               <Link
+                to="/blog"
+                className="flex items-center gap-2 text-gray-700 hover:text-primary-600 transition-colors"
+              >
+                <BookOpen className="w-4 h-4" />
+                Blog
+              </Link>
+              <Link
                 to="/uploads"
                 className="flex items-center gap-2 text-gray-700 hover:text-primary-600 transition-colors"
               >
@@ -75,6 +82,24 @@ export default function Header() {
                   Admin
                 </Link>
               )}
+            </nav>
+          )}
+
+          {/* Desktop Navigation - Non-Authenticated */}
+          {!isAuthenticated && (
+            <nav className="hidden md:flex items-center gap-8">
+              <Link to="/blog" className="text-gray-700 hover:text-primary-600 transition-colors">
+                Blog
+              </Link>
+              <Link to="/services" className="text-gray-700 hover:text-primary-600 transition-colors">
+                Services
+              </Link>
+              <Link to="/about" className="text-gray-700 hover:text-primary-600 transition-colors">
+                About
+              </Link>
+              <Link to="/contact" className="text-gray-700 hover:text-primary-600 transition-colors">
+                Contact
+              </Link>
             </nav>
           )}
 
@@ -129,7 +154,7 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Mobile Menu */}
+        {/* Mobile Menu - Authenticated */}
         {isAuthenticated && menuOpen && (
           <nav className="md:hidden pb-4 border-t border-gray-200 pt-4 flex flex-col gap-2">
             <Link
@@ -165,6 +190,14 @@ export default function Header() {
               Tours
             </Link>
             <Link
+              to="/blog"
+              className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              onClick={() => setMenuOpen(false)}
+            >
+              <BookOpen className="w-4 h-4" />
+              Blog
+            </Link>
+            <Link
               to="/uploads"
               className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
               onClick={() => setMenuOpen(false)}
@@ -192,6 +225,40 @@ export default function Header() {
               <LogOut className="w-4 h-4" />
               Logout
             </button>
+          </nav>
+        )}
+
+        {/* Mobile Menu - Non-Authenticated */}
+        {!isAuthenticated && menuOpen && (
+          <nav className="md:hidden pb-4 border-t border-gray-200 pt-4 flex flex-col gap-2">
+            <Link
+              to="/blog"
+              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              onClick={() => setMenuOpen(false)}
+            >
+              Blog
+            </Link>
+            <Link
+              to="/services"
+              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              onClick={() => setMenuOpen(false)}
+            >
+              Services
+            </Link>
+            <Link
+              to="/about"
+              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              onClick={() => setMenuOpen(false)}
+            >
+              About
+            </Link>
+            <Link
+              to="/contact"
+              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              onClick={() => setMenuOpen(false)}
+            >
+              Contact
+            </Link>
           </nav>
         )}
       </div>

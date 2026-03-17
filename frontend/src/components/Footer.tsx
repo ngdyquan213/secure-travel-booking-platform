@@ -23,7 +23,7 @@ export default function Footer() {
 
           {/* Quick Links */}
           <div>
-            <h3 className="font-semibold text-white mb-4">Quick Links</h3>
+            <h3 className="font-semibold text-white mb-4">Services</h3>
             <ul className="space-y-2 text-sm">
               <li>
                 <Link to="/flights" className="text-gray-400 hover:text-white transition-colors">
@@ -41,39 +41,43 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link to="/dashboard" className="text-gray-400 hover:text-white transition-colors">
-                  Dashboard
+                <Link to="/services" className="text-gray-400 hover:text-white transition-colors">
+                  All Services
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Support */}
+          {/* Company */}
           <div>
-            <h3 className="font-semibold text-white mb-4">Support</h3>
-            <ul className="space-y-3 text-sm">
-              <li className="flex items-center gap-2">
-                <Mail className="w-4 h-4" />
+            <h3 className="font-semibold text-white mb-4">Company</h3>
+            <ul className="space-y-2 text-sm">
+              <li>
+                <Link to="/about" className="text-gray-400 hover:text-white transition-colors">
+                  About Us
+                </Link>
+              </li>
+              <li>
+                <Link to="/blog" className="text-gray-400 hover:text-white transition-colors">
+                  Blog
+                </Link>
+              </li>
+              <li>
+                <Link to="/contact" className="text-gray-400 hover:text-white transition-colors">
+                  Contact Us
+                </Link>
+              </li>
+              <li>
                 <a href="mailto:support@travelbook.com" className="text-gray-400 hover:text-white transition-colors">
                   support@travelbook.com
                 </a>
               </li>
-              <li className="flex items-center gap-2">
-                <Phone className="w-4 h-4" />
-                <a href="tel:+1234567890" className="text-gray-400 hover:text-white transition-colors">
-                  +1 (234) 567-890
-                </a>
-              </li>
-              <li className="flex items-center gap-2">
-                <MapPin className="w-4 h-4" />
-                <span className="text-gray-400">123 Travel St, City, Country</span>
-              </li>
             </ul>
           </div>
 
-          {/* Legal */}
+          {/* Legal & More */}
           <div>
-            <h3 className="font-semibold text-white mb-4">Legal</h3>
+            <h3 className="font-semibold text-white mb-4">Legal & More</h3>
             <ul className="space-y-2 text-sm">
               <li>
                 <a href="#" className="text-gray-400 hover:text-white transition-colors">
@@ -92,7 +96,7 @@ export default function Footer() {
               </li>
               <li>
                 <a href="#" className="text-gray-400 hover:text-white transition-colors">
-                  Contact Us
+                  Accessibility
                 </a>
               </li>
             </ul>
