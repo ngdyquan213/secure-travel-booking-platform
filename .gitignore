@@ -16,3 +16,4 @@ pytest_*.out
 !.env.example
 !.env.test.example
 !.env.production.example
+.codex-run
