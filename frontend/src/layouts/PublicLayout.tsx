@@ -1,0 +1,19 @@
+import { Outlet } from 'react-router-dom'
+import Header from '../components/Header'
+import Footer from '../components/Footer'
+
+/**
+ * PublicLayout - For pages accessible without authentication
+ * (home, blog, about, services, contact)
+ */
+export function PublicLayout() {
+  return (
+    <div className="flex flex-col min-h-screen bg-gray-50">
+      <Header />
+      <main className="flex-1">
+        <Outlet />
+      </main>
+      <Footer />
+    </div>
+  )
+}
