@@ -1,24 +1,22 @@
 import { RouteObject } from 'react-router-dom'
 import PublicLayout from '../../layouts/PublicLayout'
 import HomePage from '../../pages/public/HomePage'
-import ToursPage from '../../pages/public/ToursPage'
-import TourDetailPage from '../../pages/public/TourDetailPage'
-import TourSchedulesPage from '../../pages/public/TourSchedulesPage'
-import DestinationsPage from '../../pages/public/DestinationsPage'
-import PromotionsPage from '../../pages/public/PromotionsPage'
-import HelpPage from '../../pages/public/HelpPage'
+import BlogListPage from '../../pages/public/BlogListPage'
+import BlogDetailPage from '../../pages/public/BlogDetailPage'
+import AboutPage from '../../pages/public/AboutPage'
+import ServicesPage from '../../pages/public/ServicesPage'
+import ContactPage from '../../pages/public/ContactPage'
 
 export const publicRoutes: RouteObject[] = [
   {
     element: <PublicLayout />,
     children: [
       { path: '/', element: <HomePage /> },
-      { path: '/tours', element: <ToursPage /> },
-      { path: '/tours/:id', element: <TourDetailPage /> },
-      { path: '/tours/:id/schedules', element: <TourSchedulesPage /> },
-      { path: '/destinations', element: <DestinationsPage /> },
-      { path: '/promotions', element: <PromotionsPage /> },
-      { path: '/help', element: <HelpPage /> },
+      { path: '/blog', element: <BlogListPage /> },
+      { path: '/blog/:id', element: <BlogDetailPage /> },
+      { path: '/about', element: <AboutPage /> },
+      { path: '/services', element: <ServicesPage /> },
+      { path: '/contact', element: <ContactPage /> },
     ],
   },
 ]
