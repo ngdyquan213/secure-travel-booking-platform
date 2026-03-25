@@ -18,4 +18,4 @@ pytest_*.out
 !.env.production.example
 .codex-run
 
-frontend-3
+frontend-3/

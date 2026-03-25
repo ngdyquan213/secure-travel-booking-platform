@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import OperationalError
 
 from tests.alembic_utils import drop_database, recreate_database, run_migrations
 
@@ -21,7 +22,14 @@ def test_alembic_upgrade_from_pre_outbox_revision_repairs_schema_gaps():
         f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{database_name}"
     )
 
-    recreate_database(database_url, admin_db_name)
+    try:
+        recreate_database(database_url, admin_db_name)
+    except OperationalError:
+        pytest.skip(
+            "PostgreSQL is not available for migration regression tests. "
+            "Start infra/docker/docker-compose.test.yml and rerun pytest."
+        )
+
     engine = create_engine(database_url, pool_pre_ping=True, connect_args={"connect_timeout": 2})
 
     try:

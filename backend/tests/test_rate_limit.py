@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.metrics import operational_metrics
-from app.middleware.rate_limit_middleware import RateLimitMiddleware, redis_client
+from app.middleware import rate_limit_middleware
+from app.middleware.rate_limit_middleware import RateLimitMiddleware
 
 
 def raise_redis_down(_key):
@@ -69,7 +70,7 @@ def test_rate_limit_fails_closed_for_sensitive_path_when_redis_is_unavailable(mo
     def login():
         return {"status": "ok"}
 
-    monkeypatch.setattr(redis_client, "incr", raise_redis_down)
+    monkeypatch.setattr(rate_limit_middleware.redis_client, "incr", raise_redis_down)
 
     with TestClient(app) as client:
         resp = client.post("/api/v1/auth/login")
@@ -87,7 +88,7 @@ def test_rate_limit_fails_closed_for_stripe_callback_when_redis_is_unavailable(m
     def stripe_callback():
         return {"status": "ok"}
 
-    monkeypatch.setattr(redis_client, "incr", raise_redis_down)
+    monkeypatch.setattr(rate_limit_middleware.redis_client, "incr", raise_redis_down)
 
     with TestClient(app) as client:
         resp = client.post("/api/v1/payments/callback/stripe")
@@ -101,7 +102,7 @@ def test_rate_limit_fails_open_for_non_sensitive_path_when_redis_is_unavailable(
     app = create_test_app(max_requests=1, window_seconds=60)
     operational_metrics.reset()
 
-    monkeypatch.setattr(redis_client, "incr", raise_redis_down)
+    monkeypatch.setattr(rate_limit_middleware.redis_client, "incr", raise_redis_down)
 
     with TestClient(app) as client:
         resp = client.get("/ping")
