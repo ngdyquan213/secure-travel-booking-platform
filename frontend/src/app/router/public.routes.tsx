@@ -1,12 +1,12 @@
-import { RouteObject } from 'react-router-dom'
-import PublicLayout from '../../layouts/PublicLayout'
-import HomePage from '../../pages/public/HomePage'
-import ToursPage from '../../pages/public/ToursPage'
-import TourDetailPage from '../../pages/public/TourDetailPage'
-import TourSchedulesPage from '../../pages/public/TourSchedulesPage'
-import DestinationsPage from '../../pages/public/DestinationsPage'
-import PromotionsPage from '../../pages/public/PromotionsPage'
-import HelpPage from '../../pages/public/HelpPage'
+import type { RouteObject } from 'react-router-dom'
+import { PublicLayout } from '@/app/layouts/PublicLayout'
+import { DestinationsPage } from '@/pages/public/DestinationsPage'
+import { HelpPage } from '@/pages/public/HelpPage'
+import { HomePage } from '@/pages/public/HomePage'
+import { PromotionsPage } from '@/pages/public/PromotionsPage'
+import { TourDetailPage } from '@/pages/public/TourDetailPage'
+import { TourSchedulesPage } from '@/pages/public/TourSchedulesPage'
+import { ToursPage } from '@/pages/public/ToursPage'
 
 export const publicRoutes: RouteObject[] = [
   {

@@ -1,0 +1,6 @@
+export * from './tours/api/adminTours.api'
+export * from './bookings/api/adminBookings.api'
+export * from './refunds/api/adminRefunds.api'
+export * from './documents/api/adminDocuments.api'
+export * from './pricing/api/adminPricing.api'
+export * from './operations/api/adminOperations.api'

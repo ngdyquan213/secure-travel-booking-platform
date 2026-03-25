@@ -1,15 +1,15 @@
-import { RouteObject } from 'react-router-dom'
+import type { RouteObject } from 'react-router-dom'
 import { AdminGuard } from './guards/AdminGuard'
-import AdminLayout from '../../layouts/AdminLayout'
-import AdminDashboardPage from '../../pages/admin/AdminDashboardPage'
-import AdminToursPage from '../../pages/admin/AdminToursPage'
-import AdminTourSchedulesPage from '../../pages/admin/AdminTourSchedulesPage'
-import AdminPricingRulesPage from '../../pages/admin/AdminPricingRulesPage'
-import AdminBookingsPage from '../../pages/admin/AdminBookingsPage'
-import AdminBookingDetailPage from '../../pages/admin/AdminBookingDetailPage'
-import AdminRefundsPage from '../../pages/admin/AdminRefundsPage'
-import AdminDocumentsPage from '../../pages/admin/AdminDocumentsPage'
-import AdminOperationsPage from '../../pages/admin/AdminOperationsPage'
+import { AdminLayout } from '@/app/layouts/AdminLayout'
+import { BookingDetailPage } from '@/pages/admin/BookingDetailPage'
+import { BookingManagementPage } from '@/pages/admin/BookingManagementPage'
+import { DashboardPage } from '@/pages/admin/DashboardPage'
+import { DocumentManagementPage } from '@/pages/admin/DocumentManagementPage'
+import { OperationsPage } from '@/pages/admin/OperationsPage'
+import { PricingManagementPage } from '@/pages/admin/PricingManagementPage'
+import { RefundManagementPage } from '@/pages/admin/RefundManagementPage'
+import { ScheduleManagementPage } from '@/pages/admin/ScheduleManagementPage'
+import { TourManagementPage } from '@/pages/admin/TourManagementPage'
 
 export const adminRoutes: RouteObject[] = [
   {
@@ -20,36 +20,15 @@ export const adminRoutes: RouteObject[] = [
       </AdminGuard>
     ),
     children: [
-      { path: 'dashboard', element: <AdminDashboardPage /> },
-      { path: 'tours', element: <AdminToursPage /> },
-      { path: 'tour-schedules', element: <AdminTourSchedulesPage /> },
-      { path: 'pricing-rules', element: <AdminPricingRulesPage /> },
-      { path: 'bookings', element: <AdminBookingsPage /> },
-      { path: 'bookings/:id', element: <AdminBookingDetailPage /> },
-      { path: 'refunds', element: <AdminRefundsPage /> },
-      { path: 'documents', element: <AdminDocumentsPage /> },
-      { path: 'operations', element: <AdminOperationsPage /> },
+      { path: 'dashboard', element: <DashboardPage /> },
+      { path: 'tours', element: <TourManagementPage /> },
+      { path: 'tour-schedules', element: <ScheduleManagementPage /> },
+      { path: 'pricing-rules', element: <PricingManagementPage /> },
+      { path: 'bookings', element: <BookingManagementPage /> },
+      { path: 'bookings/:id', element: <BookingDetailPage /> },
+      { path: 'refunds', element: <RefundManagementPage /> },
+      { path: 'documents', element: <DocumentManagementPage /> },
+      { path: 'operations', element: <OperationsPage /> },
     ],
   },
-  {
-    path: '/404',
-    element: <NotFoundPage />,
-  },
-  {
-    path: '403',
-    element: <ForbiddenPage />,
-  },
-  {
-    path: '500',
-    element: <ServerErrorPage />,
-  },
-  {
-    path: '*',
-    element: <NotFoundPage />,
-  },
 ]
-
-// Import error pages
-import NotFoundPage from '../../pages/errors/NotFoundPage'
-import ForbiddenPage from '../../pages/errors/ForbiddenPage'
-import ServerErrorPage from '../../pages/errors/ServerErrorPage'

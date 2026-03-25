@@ -17,3 +17,5 @@ pytest_*.out
 !.env.test.example
 !.env.production.example
 .codex-run
+
+frontend-3

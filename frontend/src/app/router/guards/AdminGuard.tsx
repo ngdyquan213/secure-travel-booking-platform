@@ -1,12 +1,15 @@
 import { Navigate } from 'react-router-dom'
 import { useAuthContext } from '../../providers/AuthProvider'
+import type { ReactNode } from 'react'
 
 interface AdminGuardProps {
-  children: React.ReactNode
+  children: ReactNode
 }
 
 export function AdminGuard({ children }: AdminGuardProps) {
   const { user, isInitializing } = useAuthContext()
+  const roles = user?.roles ?? (user?.role ? [user.role] : [])
+  const isAdmin = roles.some((role) => role === 'admin' || role === 'super_admin')
 
   if (isInitializing) {
     return (
@@ -16,7 +19,7 @@ export function AdminGuard({ children }: AdminGuardProps) {
     )
   }
 
-  if (!user || (user.role !== 'admin' && user.role !== 'super_admin')) {
+  if (!user || !isAdmin) {
     return <Navigate to="/" replace />
   }
 

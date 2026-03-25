@@ -1,9 +1,9 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, Sparkles } from 'lucide-react'
-import { SectionHero } from '../../components/SectionHero'
-import { FeatureCard } from '../../components/FeatureCard'
-import { TestimonialCard } from '../../components/TestimonialCard'
-import { homeFeatures, testimonials } from '../../data/publicContent'
+import { FeatureCard } from '@/shared/components/FeatureCard'
+import { SectionHero } from '@/shared/components/SectionHero'
+import { TestimonialCard } from '@/shared/components/TestimonialCard'
+import { homeFeatures, testimonials } from '@/shared/constants/publicContent'
 
 export function HomePage() {
   return (
@@ -11,26 +11,26 @@ export function HomePage() {
       <SectionHero
         title="Explore the World with TravelBook"
         subtitle="Your one-stop platform for flights, hotels, tours, and unforgettable travel experiences"
-        cta={{ text: 'Start Exploring', href: '/flights' }}
+        cta={{ text: 'Start Exploring', href: '/tours' }}
       >
         <div className="flex gap-4 justify-center flex-wrap mt-8">
-          <Link
-            to="/flights"
-            className="px-6 py-2 bg-white text-blue-600 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
-          >
-            Flights
-          </Link>
-          <Link
-            to="/hotels"
-            className="px-6 py-2 bg-white text-blue-600 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
-          >
-            Hotels
-          </Link>
           <Link
             to="/tours"
             className="px-6 py-2 bg-white text-blue-600 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
           >
             Tours
+          </Link>
+          <Link
+            to="/destinations"
+            className="px-6 py-2 bg-white text-blue-600 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
+          >
+            Destinations
+          </Link>
+          <Link
+            to="/promotions"
+            className="px-6 py-2 bg-white text-blue-600 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
+          >
+            Promotions
           </Link>
         </div>
       </SectionHero>
@@ -117,7 +117,7 @@ export function HomePage() {
               Sign Up Now <ArrowRight className="w-4 h-4" />
             </Link>
             <Link
-              to="/blog"
+              to="/help"
               className="inline-flex items-center gap-2 px-8 py-3 bg-gray-800 text-white rounded-lg font-semibold hover:bg-gray-700 transition-colors"
             >
               Read Travel Tips

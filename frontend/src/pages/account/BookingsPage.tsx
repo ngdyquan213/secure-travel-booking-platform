@@ -1,18 +1,37 @@
-import { useQuery } from '../../hooks/useQuery'
-import { BookOpen, Calendar, MapPin } from 'lucide-react'
-import { httpClient } from '../../services/http'
-import * as types from '../../types/api'
+import { useEffect, useState } from 'react'
+import { BookOpen, Calendar } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { apiClient } from '@/shared/api/apiClient'
+import type * as types from '@/shared/types/api'
+import { formatCurrency } from '@/shared/lib/helpers'
 
 export default function BookingsPage() {
-  const { data, isLoading } = useQuery<{ bookings: types.Booking[]; total: number }>(
-    '/bookings/user/bookings?limit=10&offset=0'
-  )
+  const [bookings, setBookings] = useState<types.Booking[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const loadBookings = async () => {
+      try {
+        const response = await apiClient.getUserBookings(20, 0)
+        setBookings(response.bookings)
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : 'Unable to load bookings.')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    void loadBookings()
+  }, [])
 
   if (isLoading) {
     return <div className="text-center py-8">Loading bookings...</div>
   }
 
-  const bookings = data?.bookings || []
+  if (error) {
+    return <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">{error}</div>
+  }
 
   return (
     <div className="space-y-4">
@@ -52,10 +71,10 @@ export default function BookingsPage() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-bold text-gray-900">${booking.total_price}</p>
-                  <button className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+                  <p className="text-lg font-bold text-gray-900">{formatCurrency(booking.total_price, booking.currency ?? 'USD')}</p>
+                  <Link to={`/account/bookings/${booking.id}`} className="text-primary-600 hover:text-primary-700 text-sm font-medium">
                     View Details
-                  </button>
+                  </Link>
                 </div>
               </div>
             </div>

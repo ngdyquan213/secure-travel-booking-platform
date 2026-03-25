@@ -1,13 +1,27 @@
-import { useQuery } from '../../hooks/useQuery'
-import { FileText, Plus, Trash2, CheckCircle, Clock } from 'lucide-react'
-import * as types from '../../types/api'
+import { FileText, CheckCircle, Clock } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { apiClient } from '@/shared/api/apiClient'
+import type * as types from '@/shared/types/api'
 
 export default function DocumentsPage() {
-  const { data, isLoading } = useQuery<{ documents: types.Document[] }>(
-    '/documents'
-  )
+  const [documents, setDocuments] = useState<types.Document[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
 
-  const documents = data?.documents || []
+  useEffect(() => {
+    const loadDocuments = async () => {
+      try {
+        const response = await apiClient.getUserDocuments()
+        setDocuments(response)
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : 'Unable to load documents.')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    void loadDocuments()
+  }, [])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -29,14 +43,17 @@ export default function DocumentsPage() {
     return <div className="text-center py-8">Loading documents...</div>
   }
 
+  if (error) {
+    return <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">{error}</div>
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-900">My Documents</h2>
-        <button className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
-          <Plus className="w-4 h-4" />
-          Upload Document
-        </button>
+        <span className="rounded-full bg-primary-50 px-3 py-2 text-sm font-semibold text-primary-700">
+          Manage uploads from Profile
+        </span>
       </div>
 
       {documents.length === 0 ? (
@@ -66,9 +83,6 @@ export default function DocumentsPage() {
                     {getStatusIcon(doc.status)}
                     {doc.status}
                   </div>
-                  <button className="text-red-600 hover:text-red-700">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
                 </div>
               </div>
             </div>

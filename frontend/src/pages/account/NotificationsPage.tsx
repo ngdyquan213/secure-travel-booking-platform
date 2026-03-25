@@ -1,6 +1,8 @@
-import { Card, Toggle, Button } from '../../components'
 import { Bell, Mail, MessageSquare, Shield } from 'lucide-react'
 import { useState } from 'react'
+import { Button } from '@/shared/ui/Button'
+import { Card } from '@/shared/ui/Card'
+import { Toggle } from '@/shared/ui/Toggle'
 
 interface NotificationPrefs {
   email: boolean

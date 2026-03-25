@@ -1,6 +1,11 @@
 import { useState } from 'react'
-import { Card, Button, Input, FormField, Modal, Table } from '../../components'
 import { Plus, Edit, Trash2 } from 'lucide-react'
+import { FormField } from '@/shared/components/forms/FormField'
+import { Button } from '@/shared/ui/Button'
+import { Card } from '@/shared/ui/Card'
+import { Input } from '@/shared/ui/Input'
+import { Modal } from '@/shared/ui/Modal'
+import { Table } from '@/shared/ui/Table'
 
 interface Traveler {
   id: string

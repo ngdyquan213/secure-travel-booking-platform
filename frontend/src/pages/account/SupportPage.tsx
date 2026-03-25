@@ -1,6 +1,10 @@
-import { Card, Button, Input, FormField, Tabs } from '../../components'
 import { MessageSquare, Mail, Phone, Clock } from 'lucide-react'
 import { useState } from 'react'
+import { FormField } from '@/shared/components/forms/FormField'
+import { Tabs } from '@/shared/components/Tabs'
+import { Button } from '@/shared/ui/Button'
+import { Card } from '@/shared/ui/Card'
+import { Input } from '@/shared/ui/Input'
 
 export default function SupportPage() {
   const [activeTab, setActiveTab] = useState('contact')

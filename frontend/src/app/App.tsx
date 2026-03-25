@@ -1,31 +1,20 @@
-// import { Routes } from 'react-router-dom'
-// import { useAuthContext } from './providers/AuthProvider'
-// import { publicRoutes } from './router/public.routes'
-// import { authRoutes } from './router/auth.routes'
-// import { accountRoutes } from './router/account.routes'
-// import { checkoutRoutes } from './router/checkout.routes'
-// import { adminRoutes } from './router/admin.routes'
+import { useRoutes } from 'react-router-dom'
+import { useAuth } from '@/features/auth/hooks/useAuth'
+import { routes } from './router'
 
-// function App() {
-//   const { isInitializing } = useAuthContext()
+function App() {
+  const { isInitializing } = useAuth()
+  const routing = useRoutes(routes)
 
-//   if (isInitializing) {
-//     return (
-//       <div className="flex items-center justify-center h-screen">
-//         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-primary-600"></div>
-//       </div>
-//     )
-//   }
+  if (isInitializing) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
+      </div>
+    )
+  }
 
-//   return (
-//     <Routes>
-//       {publicRoutes}
-//       {authRoutes}
-//       {checkoutRoutes}
-//       {accountRoutes}
-//       {adminRoutes}
-//     </Routes>
-//   )
-// }
+  return routing
+}
 
-// export default App
+export default App
