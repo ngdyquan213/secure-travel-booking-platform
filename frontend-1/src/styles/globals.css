@@ -1,0 +1,648 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@700;800&display=swap');
+
+:root {
+  color: #191c1d;
+  font-family: 'Inter', sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(219, 225, 255, 0.82), transparent 35%),
+    linear-gradient(180deg, #f8f9fa 0%, #eef1f4 100%);
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+code {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+}
+
+.stitch-page-shell {
+  min-height: 100vh;
+}
+
+.page-dock {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 10;
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  max-width: min(46rem, calc(100vw - 2rem));
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(197, 198, 210, 0.8);
+  border-radius: 1.25rem;
+  background: rgba(255, 255, 255, 0.93);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 60px rgba(0, 17, 58, 0.12);
+}
+
+.page-dock-meta {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.page-dock-label {
+  margin: 0 0 0.15rem;
+  color: #006a6a;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.page-dock strong,
+.directory-hero h1,
+.directory-section h2,
+.directory-card h3 {
+  display: block;
+  margin: 0;
+  font-family: 'Manrope', sans-serif;
+  color: #00113a;
+}
+
+.page-dock-description,
+.page-dock-route {
+  margin: 0;
+}
+
+.page-dock-description {
+  max-width: 28rem;
+  color: #4a5368;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.page-dock-route {
+  color: #2a4386;
+  font-size: 0.82rem;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.page-dock-actions,
+.directory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.solid-button,
+.ghost-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0.7rem 1rem;
+  border-radius: 999px;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    transform 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease;
+}
+
+.solid-button:hover,
+.ghost-button:hover {
+  transform: translateY(-1px);
+}
+
+.solid-button {
+  background: linear-gradient(135deg, #00113a 0%, #002366 100%);
+  color: #ffffff;
+}
+
+.ghost-button {
+  border: 1px solid rgba(0, 17, 58, 0.14);
+  background: rgba(243, 244, 245, 0.88);
+  color: #00113a;
+}
+
+.stitch-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+}
+
+.account-hub {
+  width: min(1180px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2rem 0 5rem;
+}
+
+.account-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 1.5rem;
+  padding: 1.75rem;
+  border: 1px solid rgba(10, 35, 84, 0.12);
+  border-radius: 2rem;
+  background:
+    radial-gradient(circle at top right, rgba(125, 228, 236, 0.18), transparent 34%),
+    linear-gradient(135deg, #04142d 0%, #0d2f63 55%, #eff7ff 55%, #f8fbff 100%);
+  box-shadow: 0 30px 70px rgba(0, 17, 58, 0.1);
+}
+
+.account-hero-copy {
+  color: #ffffff;
+}
+
+.account-kicker,
+.account-card-kicker {
+  margin: 0 0 0.9rem;
+  color: #0c7a82;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.account-hero .account-kicker {
+  color: #93f3f3;
+}
+
+.account-hero h1,
+.account-section-heading h2,
+.account-quick-card h3,
+.account-link-card h3,
+.account-source-strip h2,
+.account-spotlight-card h2 {
+  margin: 0;
+  font-family: 'Manrope', sans-serif;
+  color: #00113a;
+}
+
+.account-hero h1 {
+  max-width: 11ch;
+  color: #ffffff;
+  font-size: clamp(2.5rem, 5vw, 4.6rem);
+  line-height: 0.96;
+}
+
+.account-hero-text,
+.account-spotlight-card p,
+.account-quick-card p,
+.account-link-card p,
+.account-section-text {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.account-hero-text {
+  max-width: 41rem;
+  margin-top: 1rem;
+  color: rgba(237, 243, 255, 0.88);
+  font-size: 1.02rem;
+}
+
+.account-hero-actions,
+.account-chip-list,
+.account-link-actions,
+.account-source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.account-hero-actions {
+  margin-top: 1.5rem;
+}
+
+.account-hero-ghost {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.account-chip-list {
+  margin-top: 1.4rem;
+}
+
+.account-chip-stat {
+  display: inline-flex;
+  padding: 0.52rem 0.82rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f0f7ff;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.account-hero-panels {
+  display: grid;
+  gap: 1rem;
+}
+
+.account-spotlight-card,
+.account-quick-card,
+.account-link-card,
+.account-source-strip {
+  border: 1px solid rgba(197, 198, 210, 0.88);
+  box-shadow: 0 18px 44px rgba(0, 17, 58, 0.06);
+}
+
+.account-spotlight-card {
+  padding: 1.15rem 1.2rem;
+  border-radius: 1.45rem;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.account-spotlight-card h2 {
+  font-size: 1.2rem;
+  color: #06214d;
+}
+
+.account-spotlight-card p,
+.account-quick-card p,
+.account-link-card p,
+.account-section-text {
+  color: #49556b;
+}
+
+.account-quick-section,
+.account-workspace-section {
+  margin-top: 1.4rem;
+  padding: 1.5rem;
+  border: 1px solid rgba(197, 198, 210, 0.86);
+  border-radius: 1.8rem;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 22px 56px rgba(0, 17, 58, 0.05);
+}
+
+.account-workspace-section--ocean {
+  background:
+    linear-gradient(135deg, rgba(231, 248, 251, 0.92), rgba(255, 255, 255, 0.92));
+}
+
+.account-workspace-section--sand {
+  background:
+    linear-gradient(135deg, rgba(255, 244, 226, 0.88), rgba(255, 255, 255, 0.92));
+}
+
+.account-workspace-section--sky {
+  background:
+    linear-gradient(135deg, rgba(235, 242, 255, 0.92), rgba(255, 255, 255, 0.92));
+}
+
+.account-section-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);
+  gap: 1rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.account-section-heading h2 {
+  font-size: 1.85rem;
+}
+
+.account-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.account-quick-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-height: 100%;
+  padding: 1.25rem;
+  border-radius: 1.45rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 255, 0.92));
+}
+
+.account-quick-card h3,
+.account-link-card h3 {
+  font-size: 1.12rem;
+  color: #061a43;
+}
+
+.subtle-link {
+  display: inline-flex;
+  align-items: center;
+  color: #11357a;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.subtle-link:hover {
+  color: #00113a;
+  transform: translateY(-1px);
+}
+
+.account-link-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.account-link-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 100%;
+  padding: 1.2rem;
+  border-radius: 1.45rem;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.account-link-card--featured {
+  grid-column: span 2;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.99), rgba(241, 246, 255, 0.95));
+}
+
+.account-link-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.account-link-badge {
+  display: inline-flex;
+  padding: 0.36rem 0.72rem;
+  border-radius: 999px;
+  background: rgba(0, 110, 110, 0.1);
+  color: #006e6e;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.account-link-route {
+  color: #2a4386;
+  font-size: 0.82rem;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.account-link-actions {
+  margin-top: auto;
+}
+
+.account-source-strip {
+  display: flex;
+  gap: 1.4rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1.4rem;
+  padding: 1.4rem 1.5rem;
+  border-radius: 1.8rem;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.account-source-strip h2 {
+  font-size: 1.55rem;
+  color: #061a43;
+}
+
+.directory-page {
+  min-height: 100vh;
+  padding: 4rem 1.5rem 6rem;
+}
+
+.directory-hero,
+.directory-section {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+.directory-hero {
+  margin-bottom: 2.5rem;
+  padding: 2rem;
+  border: 1px solid rgba(197, 198, 210, 0.9);
+  border-radius: 2rem;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 30px 70px rgba(0, 17, 58, 0.08);
+}
+
+.directory-kicker,
+.directory-section-kicker {
+  display: inline-flex;
+  margin: 0 0 1rem;
+  color: #006e6e;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.directory-hero h1 {
+  font-size: clamp(2.4rem, 5vw, 4.4rem);
+  line-height: 0.98;
+}
+
+.directory-hero p {
+  max-width: 42rem;
+  margin: 1rem 0 0;
+  color: #444650;
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.directory-actions {
+  margin-top: 1.5rem;
+}
+
+.directory-section {
+  margin-top: 2rem;
+}
+
+.directory-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.directory-section h2 {
+  font-size: 1.8rem;
+}
+
+.directory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.directory-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 100%;
+  padding: 1.2rem;
+  border: 1px solid rgba(197, 198, 210, 0.88);
+  border-radius: 1.4rem;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 44px rgba(0, 17, 58, 0.06);
+}
+
+.directory-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.directory-chip {
+  display: inline-flex;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: #90efef;
+  color: #006e6e;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.directory-card p,
+.directory-card dt,
+.directory-card dd {
+  margin: 0;
+  color: #444650;
+}
+
+.directory-card p {
+  line-height: 1.65;
+}
+
+.directory-meta {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.directory-meta dt {
+  margin-bottom: 0.2rem;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.directory-meta dd code,
+.directory-card-top code {
+  word-break: break-word;
+  color: #2a4386;
+}
+
+@media (max-width: 960px) {
+  .account-hub {
+    width: min(100%, calc(100% - 2rem));
+  }
+
+  .account-hero,
+  .account-section-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .account-hero {
+    padding: 1.5rem;
+    background:
+      radial-gradient(circle at top right, rgba(125, 228, 236, 0.18), transparent 34%),
+      linear-gradient(180deg, #04142d 0%, #0d2f63 58%, #eff7ff 58%, #f8fbff 100%);
+  }
+
+  .account-quick-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .account-source-strip {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .account-hub {
+    width: min(100%, calc(100% - 1rem));
+    padding: 1rem 0 6rem;
+  }
+
+  .directory-page {
+    padding: 1rem 1rem 6rem;
+  }
+
+  .directory-hero {
+    padding: 1.5rem;
+    border-radius: 1.5rem;
+  }
+
+  .page-dock {
+    left: 1rem;
+    right: 1rem;
+    bottom: 1rem;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-dock-actions {
+    width: 100%;
+  }
+
+  .page-dock-actions > * {
+    flex: 1 1 0;
+  }
+
+  .account-hero,
+  .account-quick-section,
+  .account-workspace-section,
+  .account-source-strip {
+    padding: 1.2rem;
+    border-radius: 1.5rem;
+  }
+
+  .account-hero h1 {
+    max-width: none;
+    font-size: clamp(2.2rem, 10vw, 3rem);
+  }
+
+  .account-quick-grid,
+  .account-link-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-link-card--featured {
+    grid-column: span 1;
+  }
+}
