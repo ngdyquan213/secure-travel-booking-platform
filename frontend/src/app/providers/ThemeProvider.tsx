@@ -1,4 +1,4 @@
-import { createContext, useContext, ReactNode, useEffect } from 'react'
+import { createContext, useContext, useEffect, type ReactNode } from 'react'
 import { useLocalStorage } from '@/shared/hooks/useLocalStorage'
 import { STORAGE_KEYS } from '@/shared/constants/constants'
 

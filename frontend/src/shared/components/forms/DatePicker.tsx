@@ -33,9 +33,25 @@ export function DatePicker({ value, onChange, label, error, minDate, maxDate }: 
 
   const formatDate = (date: Date) => date.toISOString().split('T')[0]
   const selectedDate = value ? new Date(value + 'T00:00:00') : null
+  const isSelectable = (date: Date) => {
+    const normalized = formatDate(date)
+
+    if (minDate && normalized < minDate) {
+      return false
+    }
+
+    if (maxDate && normalized > maxDate) {
+      return false
+    }
+
+    return true
+  }
 
   const handleSelectDay = (day: number) => {
     const selected = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
+    if (!isSelectable(selected)) {
+      return
+    }
     onChange(formatDate(selected))
     setIsOpen(false)
   }
@@ -47,6 +63,7 @@ export function DatePicker({ value, onChange, label, error, minDate, maxDate }: 
       {label && <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>}
       <div className="relative">
         <button
+          type="button"
           onClick={() => setIsOpen(!isOpen)}
           className={`w-full px-4 py-2 border rounded-lg flex items-center gap-2 ${
             error ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
@@ -60,6 +77,7 @@ export function DatePicker({ value, onChange, label, error, minDate, maxDate }: 
           <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-4 z-10">
             <div className="flex items-center justify-between mb-4">
               <button
+                type="button"
                 onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
                 className="p-1 hover:bg-gray-100 rounded"
               >
@@ -67,6 +85,7 @@ export function DatePicker({ value, onChange, label, error, minDate, maxDate }: 
               </button>
               <p className="font-medium">{monthYear}</p>
               <button
+                type="button"
                 onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
                 className="p-1 hover:bg-gray-100 rounded"
               >
@@ -75,20 +94,24 @@ export function DatePicker({ value, onChange, label, error, minDate, maxDate }: 
             </div>
 
             <div className="grid grid-cols-7 gap-2 text-center text-sm">
-              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => (
                 <div key={day} className="font-semibold text-gray-600 w-8">{day}</div>
               ))}
               {[...emptyDays, ...days].map((day, index) => (
                 <button
                   key={index}
+                  type="button"
                   onClick={() => day && handleSelectDay(day)}
-                  disabled={!day}
+                  disabled={!day || !isSelectable(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day))}
                   className={`w-8 h-8 rounded ${
                     !day
                       ? 'invisible'
-                      : selectedDate && selectedDate.getDate() === day && selectedDate.getMonth() === currentMonth.getMonth()
+                      : selectedDate &&
+                          selectedDate.getDate() === day &&
+                          selectedDate.getMonth() === currentMonth.getMonth() &&
+                          selectedDate.getFullYear() === currentMonth.getFullYear()
                         ? 'bg-primary-600 text-white'
-                        : 'hover:bg-gray-100'
+                        : 'hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300'
                   }`}
                 >
                   {day}

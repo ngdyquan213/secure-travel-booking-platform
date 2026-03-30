@@ -7,7 +7,6 @@ interface PaginationProps {
 }
 
 export function Pagination({ currentPage, totalPages, onPageChange }: PaginationProps) {
-  const pages = Array.from({ length: totalPages }, (_, i) => i + 1)
   const maxVisible = 7
   let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2))
   let endPage = Math.min(totalPages, startPage + maxVisible - 1)

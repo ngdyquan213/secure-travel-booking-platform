@@ -2,6 +2,7 @@ import axios from 'axios'
 import type {
   AxiosInstance,
   AxiosError,
+  AxiosRequestConfig,
   InternalAxiosRequestConfig,
 } from 'axios'
 import { API_BASE_URL, API_TIMEOUT, STORAGE_KEYS } from '@/shared/constants/constants'
@@ -9,18 +10,20 @@ import { API_BASE_URL, API_TIMEOUT, STORAGE_KEYS } from '@/shared/constants/cons
 interface ApiErrorResponse {
   error_code?: string
   message?: string
-  details?: Record<string, any>
+  details?: Record<string, unknown>
   timestamp?: string
 }
 
 export class HttpError extends Error {
-  constructor(
-    public status: number,
-    public code: string,
-    message: string,
-    public data?: any
-  ) {
+  status: number
+  code: string
+  data?: unknown
+
+  constructor(status: number, code: string, message: string, data?: unknown) {
     super(message)
+    this.status = status
+    this.code = code
+    this.data = data
     this.name = 'HttpError'
   }
 }
@@ -104,33 +107,33 @@ export class HttpClient {
   }
 
   // GET request
-  async get<T>(url: string, config?: any): Promise<T> {
+  async get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.client.get<T>(url, config)
-    return response.data
+    return response.data as T
   }
 
   // POST request
-  async post<T>(url: string, data?: any, config?: any): Promise<T> {
+  async post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.client.post<T>(url, data, config)
-    return response.data
+    return response.data as T
   }
 
   // PUT request
-  async put<T>(url: string, data?: any, config?: any): Promise<T> {
+  async put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.client.put<T>(url, data, config)
-    return response.data
+    return response.data as T
   }
 
   // PATCH request
-  async patch<T>(url: string, data?: any, config?: any): Promise<T> {
+  async patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.client.patch<T>(url, data, config)
-    return response.data
+    return response.data as T
   }
 
   // DELETE request
-  async delete<T = void>(url: string, config?: any): Promise<T> {
+  async delete<T = void>(url: string, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.client.delete<T>(url, config)
-    return response.data
+    return response.data as T
   }
 }
 

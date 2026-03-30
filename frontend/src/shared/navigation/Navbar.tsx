@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Bell, Settings, LogOut, Menu } from 'lucide-react'
 import { useState } from 'react'
-import { Avatar } from '../common/Avatar'
+import { Avatar } from '@/shared/components/Avatar'
 
 interface NavbarProps {
   user?: {
@@ -40,7 +40,7 @@ export function Navbar({ user, onLogout, notifications, onMenuClick }: NavbarPro
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                 className="flex items-center gap-2 p-2 hover:bg-gray-100 rounded-lg"
               >
-                <Avatar initials={user.name.split(' ').map(n => n[0]).join('')} />
+                <Avatar initials={user.name.split(' ').map((n) => n[0]).join('')} />
               </button>
 
               {isDropdownOpen && (

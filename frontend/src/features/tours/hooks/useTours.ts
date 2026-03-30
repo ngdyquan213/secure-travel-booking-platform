@@ -1,6 +1,5 @@
+import { useToursQuery } from '@/features/tours/queries/useToursQuery'
+
 export function useTours() {
-  return {
-    data: [],
-    isLoading: false,
-  }
+  return useToursQuery()
 }

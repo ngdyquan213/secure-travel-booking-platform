@@ -1,3 +1,1 @@
-export function TourCard() {
-  return <div className="text-sm text-gray-500">TourCard</div>
-}
+export { TourCard } from '@/features/tours/ui/TourCard'

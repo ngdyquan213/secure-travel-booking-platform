@@ -1,210 +1,134 @@
-import { Link, useNavigate } from 'react-router-dom'
-import { useAuthStore } from '@/features/auth/model/auth.store'
 import { useState } from 'react'
-import { BookOpen, Home, LifeBuoy, LogOut, Menu, Plane, Settings, Ticket, User, X } from 'lucide-react'
-import { getInitials } from '@/shared/lib/helpers'
+import { Link, NavLink } from 'react-router-dom'
+import { Menu, Plane, ShieldCheck, X } from 'lucide-react'
+import { routePaths } from '@/app/router/routePaths'
+import { cn } from '@/shared/lib/cn'
+import { Button } from '@/shared/ui/Button'
 
-export default function Header() {
-  const { isAuthenticated, user, logout } = useAuthStore()
-  const navigate = useNavigate()
+const navItems = [
+  { label: 'Tours', type: 'route', to: routePaths.public.tours },
+  { label: 'Destinations', type: 'route', to: routePaths.public.destinations },
+  { label: 'Promotions', type: 'route', to: routePaths.public.promotions },
+  { label: 'Help', type: 'route', to: routePaths.public.help },
+] as const
+
+function scrollToSection(sectionId: string) {
+  const element = document.getElementById(sectionId)
+  if (element) {
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
+export default function MainHeader() {
   const [menuOpen, setMenuOpen] = useState(false)
 
-  const handleLogout = async () => {
-    await logout()
-    navigate('/login')
-  }
-
-  const roles = user?.roles ?? (user?.role ? [user.role] : [])
-  const isAdmin = roles.some((role) => role === 'admin' || role === 'super_admin')
-
-  const authenticatedLinks = [
-    { to: '/account/dashboard', label: 'Dashboard', icon: Home },
-    { to: '/account/bookings', label: 'Bookings', icon: BookOpen },
-    { to: '/account/documents', label: 'Documents', icon: Ticket },
-    { to: '/account/support', label: 'Support', icon: LifeBuoy },
-  ]
-
-  const publicLinks = [
-    { to: '/tours', label: 'Tours' },
-    { to: '/destinations', label: 'Destinations' },
-    { to: '/promotions', label: 'Promotions' },
-    { to: '/help', label: 'Help' },
-  ]
-
   return (
-    <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-      <div className="container-custom">
-        <div className="flex items-center justify-between py-4">
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center group-hover:bg-primary-700 transition-colors">
-              <Plane className="w-5 h-5 text-white" />
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-white/60 bg-white/80 shadow-[0_10px_30px_rgba(15,23,42,0.05)] backdrop-blur-xl">
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-6 px-6 py-4 lg:px-8">
+        <div className="flex items-center gap-10">
+          <Link to={routePaths.public.home} className="group flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--color-primary)] text-white transition-transform duration-300 group-hover:-rotate-6">
+              <Plane className="h-5 w-5" />
             </div>
-            <span className="font-bold text-lg text-gray-900 hidden sm:inline">TravelBook</span>
+            <span className="block font-[family-name:var(--font-display)] text-lg font-extrabold tracking-tight text-[color:var(--color-primary)]">
+              TravelBook
+            </span>
           </Link>
 
-          {/* Desktop Navigation - Authenticated */}
-          {isAuthenticated && (
-            <nav className="hidden md:flex items-center gap-8">
-              <Link
-                to="/account/profile"
-                className="flex items-center gap-2 text-gray-700 hover:text-primary-600 transition-colors"
+          <nav className="hidden items-center gap-7 md:flex">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.label}
+                to={item.to}
+                className={({ isActive }) =>
+                  cn(
+                    'text-sm font-semibold tracking-[0.18em] transition-colors hover:text-[color:var(--color-secondary-strong)]',
+                    isActive
+                      ? 'text-[color:var(--color-primary)]'
+                      : 'text-[color:var(--color-on-surface-variant)]'
+                  )
+                }
               >
-                <User className="w-4 h-4" />
-                Profile
-              </Link>
-              {authenticatedLinks.map(({ to, label, icon: Icon }) => (
-                <Link
-                  key={to}
-                  to={to}
-                  className="flex items-center gap-2 text-gray-700 hover:text-primary-600 transition-colors"
-                >
-                  <Icon className="w-4 h-4" />
-                  {label}
-                </Link>
-              ))}
-              {isAdmin && (
-                <Link
-                  to="/admin/dashboard"
-                  className="flex items-center gap-2 text-gray-700 hover:text-primary-600 transition-colors"
-                >
-                  <Settings className="w-4 h-4" />
-                  Admin
-                </Link>
-              )}
-            </nav>
-          )}
-
-          {/* Desktop Navigation - Non-Authenticated */}
-          {!isAuthenticated && (
-            <nav className="hidden md:flex items-center gap-8">
-              {publicLinks.map(({ to, label }) => (
-                <Link key={to} to={to} className="text-gray-700 hover:text-primary-600 transition-colors">
-                  {label}
-                </Link>
-              ))}
-            </nav>
-          )}
-
-          {/* User Section */}
-          <div className="flex items-center gap-4">
-            {isAuthenticated && user ? (
-              <div className="flex items-center gap-4">
-                {/* Desktop User Menu */}
-                <div className="hidden sm:flex items-center gap-3 pl-4 border-l border-gray-200">
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                    <p className="text-xs text-gray-500">{user.email}</p>
-                  </div>
-                  <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
-                    <span className="text-xs font-bold text-primary-600">{getInitials(user.name)}</span>
-                  </div>
-                </div>
-
-                {/* Logout Button */}
-                <button
-                  onClick={handleLogout}
-                  className="hidden sm:flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <LogOut className="w-4 h-4" />
-                  Logout
-                </button>
-
-                {/* Mobile Menu Toggle */}
-                <button
-                  onClick={() => setMenuOpen(!menuOpen)}
-                  className="md:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Link
-                  to="/login"
-                  className="px-4 py-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                >
-                  Login
-                </Link>
-                <Link
-                  to="/register"
-                  className="px-4 py-2 bg-primary-600 text-white hover:bg-primary-700 rounded-lg transition-colors"
-                >
-                  Register
-                </Link>
-                <button
-                  onClick={() => setMenuOpen((current) => !current)}
-                  className="md:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                  aria-label="Open navigation menu"
-                >
-                  {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                </button>
-              </div>
-            )}
-          </div>
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
         </div>
 
-        {/* Mobile Menu - Authenticated */}
-        {isAuthenticated && menuOpen && (
-          <nav className="md:hidden pb-4 border-t border-gray-200 pt-4 flex flex-col gap-2">
-            <Link
-              to="/account/profile"
-              className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              onClick={() => setMenuOpen(false)}
-            >
-              <User className="w-4 h-4" />
-              Profile
-            </Link>
-            {authenticatedLinks.map(({ to, label, icon: Icon }) => (
-              <Link
-                key={to}
-                to={to}
-                className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                onClick={() => setMenuOpen(false)}
-              >
-                <Icon className="w-4 h-4" />
-                {label}
-              </Link>
-            ))}
-            {isAdmin && (
-              <Link
-                to="/admin/dashboard"
-                className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                onClick={() => setMenuOpen(false)}
-              >
-                <Settings className="w-4 h-4" />
-                Admin
-              </Link>
-            )}
-            <button
-              onClick={() => {
-                handleLogout()
-                setMenuOpen(false)
-              }}
-              className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors mt-2"
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
-            </button>
-          </nav>
-        )}
+        <div className="hidden items-center gap-4 md:flex">
+          <button
+            type="button"
+            className="text-sm font-semibold text-[color:var(--color-on-surface-variant)] transition-colors hover:text-[color:var(--color-primary)]"
+            onClick={() => scrollToSection(routePaths.sections.bookingConfidence)}
+          >
+            Log In
+          </button>
+          <Button
+            variant="hero"
+            size="sm"
+            onClick={() => scrollToSection(routePaths.sections.finalCta)}
+          >
+            Sign Up
+          </Button>
+        </div>
 
-        {/* Mobile Menu - Non-Authenticated */}
-        {!isAuthenticated && menuOpen && (
-          <nav className="md:hidden pb-4 border-t border-gray-200 pt-4 flex flex-col gap-2">
-            {publicLinks.map(({ to, label }) => (
-              <Link
-                key={to}
-                to={to}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+        <button
+          type="button"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--color-outline-variant)] bg-white text-[color:var(--color-primary)] md:hidden"
+          onClick={() => setMenuOpen((current) => !current)}
+          aria-label="Toggle navigation menu"
+        >
+          {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </button>
+      </div>
+
+      {menuOpen ? (
+        <div className="border-t border-[color:var(--color-outline-variant)] bg-white px-6 py-5 md:hidden">
+          <div className="mx-auto flex max-w-7xl flex-col gap-3">
+            <div className="mb-2 flex items-center gap-2 rounded-2xl bg-[color:var(--color-secondary-container)] px-4 py-3 text-sm font-medium text-[color:var(--color-secondary-strong)]">
+              <ShieldCheck className="h-4 w-4" />
+              Premium travel, secure booking, curated experiences.
+            </div>
+            {navItems.map((item) => (
+              <NavLink
+                key={item.label}
+                to={item.to}
+                className={({ isActive }) =>
+                  cn(
+                    'rounded-2xl px-4 py-3 text-sm font-semibold hover:bg-[color:var(--color-surface-low)]',
+                    isActive
+                      ? 'bg-[color:var(--color-surface-low)] text-[color:var(--color-primary)]'
+                      : 'text-[color:var(--color-primary)]'
+                  )
+                }
                 onClick={() => setMenuOpen(false)}
               >
-                {label}
-              </Link>
+                {item.label}
+              </NavLink>
             ))}
-          </nav>
-        )}
-      </div>
+            <div className="mt-2 grid grid-cols-2 gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setMenuOpen(false)
+                  scrollToSection(routePaths.sections.bookingConfidence)
+                }}
+              >
+                Log In
+              </Button>
+              <Button
+                variant="hero"
+                onClick={() => {
+                  setMenuOpen(false)
+                  scrollToSection(routePaths.sections.finalCta)
+                }}
+              >
+                Sign Up
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </header>
   )
 }

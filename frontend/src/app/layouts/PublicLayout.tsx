@@ -8,9 +8,9 @@ import MainFooter from '@/shared/navigation/MainFooter'
  */
 export function PublicLayout() {
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div className="flex min-h-screen flex-col bg-[color:var(--color-background)] text-[color:var(--color-on-background)]">
       <MainHeader />
-      <main className="flex-1">
+      <main className="flex-1 pt-20">
         <Outlet />
       </main>
       <MainFooter />

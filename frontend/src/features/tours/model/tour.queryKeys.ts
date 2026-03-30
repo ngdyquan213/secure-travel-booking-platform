@@ -1,3 +1,1 @@
-import { createQueryKeys } from '@/shared/api/createQueryKeys'
-
-export const tourQueryKeys = createQueryKeys('tours')
+export { tourKeys as tourQueryKeys } from '@/features/tours/queries/tourKeys'

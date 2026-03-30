@@ -101,7 +101,15 @@ function normalizeDocument(raw: Record<string, unknown>): types.Document {
 }
 
 function normalizePayment(raw: Record<string, unknown>): types.Payment {
-  const status = toUpperStatus(typeof raw.payment_status === 'string' ? raw.payment_status : typeof raw.status === 'string' ? raw.status : 'pending') ?? 'PENDING'
+  const status = (
+    toUpperStatus(
+      typeof raw.payment_status === 'string'
+        ? raw.payment_status
+        : typeof raw.status === 'string'
+          ? raw.status
+          : 'pending'
+    ) ?? 'PENDING'
+  ) as types.PaymentStatus
   const timestamp = String(raw.created_at ?? raw.paid_at ?? new Date().toISOString())
 
   return {

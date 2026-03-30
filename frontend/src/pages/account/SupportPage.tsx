@@ -1,4 +1,4 @@
-import { MessageSquare, Mail, Phone, Clock } from 'lucide-react'
+import { Mail, Phone, Clock } from 'lucide-react'
 import { useState } from 'react'
 import { FormField } from '@/shared/components/forms/FormField'
 import { Tabs } from '@/shared/components/Tabs'
