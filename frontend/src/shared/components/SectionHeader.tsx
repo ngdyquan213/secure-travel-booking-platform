@@ -2,12 +2,12 @@ import type { ReactNode } from 'react'
 import { cn } from '@/shared/lib/cn'
 
 interface SectionHeaderProps {
-  eyebrow?: string
-  title: string
-  subtitle?: string
-  action?: ReactNode
-  align?: 'left' | 'center'
-  inverse?: boolean
+  readonly eyebrow?: string
+  readonly title: string
+  readonly subtitle?: string
+  readonly action?: ReactNode
+  readonly align?: 'left' | 'center'
+  readonly inverse?: boolean
 }
 
 export function SectionHeader({
@@ -30,7 +30,7 @@ export function SectionHeader({
           <p
             className={cn(
               'text-xs font-bold uppercase tracking-[0.24em]',
-              inverse ? 'text-white/70' : 'text-[color:var(--color-secondary-strong)]'
+              inverse ? 'text-white/70' : 'text-(--color-secondary-strong)'
             )}
           >
             {eyebrow}
@@ -38,8 +38,8 @@ export function SectionHeader({
         ) : null}
         <h2
           className={cn(
-            'mt-2 font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight md:text-4xl',
-            inverse ? 'text-white' : 'text-[color:var(--color-primary)]'
+            'mt-2 font-(family-name:--font-display) text-3xl font-extrabold tracking-tight md:text-4xl',
+            inverse ? 'text-white' : 'text-primary'
           )}
         >
           {title}
@@ -48,7 +48,7 @@ export function SectionHeader({
           <p
             className={cn(
               'mt-3 text-base leading-7',
-              inverse ? 'text-[color:var(--color-primary-soft)]' : 'text-[color:var(--color-on-surface-variant)]'
+              inverse ? 'text-(--color-primary-soft)' : 'text-on-surface-variant'
             )}
           >
             {subtitle}
